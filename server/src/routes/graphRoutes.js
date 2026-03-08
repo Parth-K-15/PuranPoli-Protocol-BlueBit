@@ -9,11 +9,13 @@ const {
   deleteEdge,
   loadDemo,
   resetGraph,
+  getNodeCatalog,
 } = require("../controllers/graphController");
 
 const router = express.Router();
 
 router.get("/graph", getGraph);
+router.get("/nodes/catalog", getNodeCatalog);
 router.post("/graph/demo", loadDemo);
 router.post("/graph/reset", resetGraph);
 

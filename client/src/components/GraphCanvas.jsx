@@ -11,6 +11,7 @@ import {
 } from "@xyflow/react";
 
 import CustomNode from "./CustomNode";
+import NodeCatalogModal from "./NodeCatalogModal";
 import { graphApi } from "../services/api";
 
 const nodeTypes = {
@@ -117,6 +118,7 @@ function GraphCanvas({ onNodeSelect, refreshToken, setRefreshToken, workspaceId 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedEdgeId, setSelectedEdgeId] = useState(null);
+  const [catalogModal, setCatalogModal] = useState(null); // { nodeType, position }
   const { screenToFlowPosition, zoomIn, zoomOut, fitView } = useReactFlow();
 
   const loadGraph = useCallback(async () => {
@@ -198,7 +200,7 @@ function GraphCanvas({ onNodeSelect, refreshToken, setRefreshToken, workspaceId 
   );
 
   const onDrop = useCallback(
-    async (event) => {
+    (event) => {
       event.preventDefault();
       const nodeType = event.dataTransfer.getData("application/reactflow");
 
@@ -207,11 +209,20 @@ function GraphCanvas({ onNodeSelect, refreshToken, setRefreshToken, workspaceId 
       }
 
       const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      setCatalogModal({ nodeType, position });
+    },
+    [screenToFlowPosition, workspaceId]
+  );
+
+  const handleCatalogSelect = useCallback(
+    async (nodeData) => {
+      if (!workspaceId) return;
       const id = createNodeId();
-      const data = defaultNodeData(nodeType, id);
+      const position = catalogModal?.position || { x: 0, y: 0 };
 
       const payload = {
-        ...data,
+        id,
+        ...nodeData,
         position,
         workspace: workspaceId,
       };
@@ -221,9 +232,11 @@ function GraphCanvas({ onNodeSelect, refreshToken, setRefreshToken, workspaceId 
         setNodes((nds) => nds.concat(response.node));
       } catch (error) {
         console.error("Failed to create node", error);
+      } finally {
+        setCatalogModal(null);
       }
     },
-    [screenToFlowPosition, setNodes, workspaceId]
+    [workspaceId, catalogModal, setNodes]
   );
 
   const onDragOver = useCallback((event) => {
@@ -375,6 +388,16 @@ function GraphCanvas({ onNodeSelect, refreshToken, setRefreshToken, workspaceId 
           </Panel>
         )}
       </ReactFlow>
+
+      {catalogModal && (
+        <NodeCatalogModal
+          nodeType={catalogModal.nodeType}
+          position={catalogModal.position}
+          workspaceId={workspaceId}
+          onSelect={handleCatalogSelect}
+          onClose={() => setCatalogModal(null)}
+        />
+      )}
     </div>
   );
 }

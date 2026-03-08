@@ -83,6 +83,46 @@ const nodeSchema = new mongoose.Schema(
       default: "Unknown",
       trim: true,
     },
+    gmp_status: {
+      type: String,
+      enum: ["Certified", "Pending", "Non-Compliant", "Unknown"],
+      default: "Unknown",
+    },
+    fda_approval: {
+      type: String,
+      enum: ["Approved", "Pending", "Not Required", "Rejected", "Unknown"],
+      default: "Unknown",
+    },
+    cold_chain_capable: {
+      type: Boolean,
+      default: false,
+    },
+    cost: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    moq: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    contract_duration_months: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    batch_cycle_time_days: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    financial_health_score: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100,
+    },
     position: {
       x: {
         type: Number,

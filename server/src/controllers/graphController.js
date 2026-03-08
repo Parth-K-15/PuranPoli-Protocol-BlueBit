@@ -5,6 +5,8 @@ const { Node, NODE_TYPES } = require("../models/Node");
 const Edge = require("../models/Edge");
 const Workspace = require("../models/Workspace");
 const { demoNodes, demoEdges } = require("../data/demoGraph");
+const { nodeCatalog } = require("../data/nodeCatalog");
+const { CatalogItem } = require("../models/CatalogItem");
 
 const toReactFlowNode = (nodeDoc) => ({
   id: nodeDoc.id,
@@ -22,6 +24,14 @@ const toReactFlowNode = (nodeDoc) => ({
     reliability_score: nodeDoc.reliability_score,
     dependency_percentage: nodeDoc.dependency_percentage,
     compliance_status: nodeDoc.compliance_status,
+    gmp_status: nodeDoc.gmp_status,
+    fda_approval: nodeDoc.fda_approval,
+    cold_chain_capable: nodeDoc.cold_chain_capable,
+    cost: nodeDoc.cost,
+    moq: nodeDoc.moq,
+    contract_duration_months: nodeDoc.contract_duration_months,
+    batch_cycle_time_days: nodeDoc.batch_cycle_time_days,
+    financial_health_score: nodeDoc.financial_health_score,
   },
   type: "supplyNode",
 });
@@ -91,6 +101,14 @@ const createNode = async (req, res) => {
     reliability_score,
     dependency_percentage,
     compliance_status,
+    gmp_status,
+    fda_approval,
+    cold_chain_capable,
+    cost,
+    moq,
+    contract_duration_months,
+    batch_cycle_time_days,
+    financial_health_score,
     position,
     workspace,
   } = req.body;
@@ -130,6 +148,14 @@ const createNode = async (req, res) => {
     reliability_score,
     dependency_percentage,
     compliance_status,
+    gmp_status,
+    fda_approval,
+    cold_chain_capable,
+    cost,
+    moq,
+    contract_duration_months,
+    batch_cycle_time_days,
+    financial_health_score,
     position,
   });
 
@@ -331,6 +357,30 @@ const resetGraph = async (req, res) => {
   });
 };
 
+const getNodeCatalog = async (req, res) => {
+  const { type } = req.query;
+  const filter = {};
+  if (type) filter.type = type;
+
+  // Try DB first
+  const dbItems = await CatalogItem.find(filter).sort({ type: 1, name: 1 }).lean();
+
+  if (dbItems.length > 0) {
+    const catalog = {};
+    for (const item of dbItems) {
+      if (!catalog[item.type]) catalog[item.type] = [];
+      catalog[item.type].push(item);
+    }
+    return res.status(StatusCodes.OK).json({ success: true, catalog });
+  }
+
+  // Fall back to static data
+  if (type && nodeCatalog[type]) {
+    return res.status(StatusCodes.OK).json({ success: true, catalog: { [type]: nodeCatalog[type] } });
+  }
+  res.status(StatusCodes.OK).json({ success: true, catalog: nodeCatalog });
+};
+
 module.exports = {
   getGraph,
   createNode,
@@ -340,4 +390,5 @@ module.exports = {
   deleteEdge,
   loadDemo,
   resetGraph,
+  getNodeCatalog,
 };

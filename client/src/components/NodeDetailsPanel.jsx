@@ -12,6 +12,14 @@ const fields = [
   { key: "reliability_score", label: "Reliability Score", type: "number" },
   { key: "dependency_percentage", label: "Dependency %", type: "number" },
   { key: "compliance_status", label: "Compliance Status", type: "text" },
+  { key: "gmp_status", label: "GMP Status", type: "select", options: ["Certified", "Pending", "Non-Compliant", "Unknown"] },
+  { key: "fda_approval", label: "FDA Approval", type: "select", options: ["Approved", "Pending", "Not Required", "Rejected", "Unknown"] },
+  { key: "cold_chain_capable", label: "Cold Chain Capable", type: "checkbox" },
+  { key: "cost", label: "Cost ($)", type: "number" },
+  { key: "moq", label: "MOQ", type: "number" },
+  { key: "contract_duration_months", label: "Contract Duration (months)", type: "number" },
+  { key: "batch_cycle_time_days", label: "Batch Cycle Time (days)", type: "number" },
+  { key: "financial_health_score", label: "Financial Health (0-100)", type: "number" },
 ];
 
 function NodeDetailsPanel({ node, onClose, onSave, onDelete, isSaving }) {
@@ -24,7 +32,7 @@ function NodeDetailsPanel({ node, onClose, onSave, onDelete, isSaving }) {
   const handleChange = (key, value, type) => {
     setFormState((prev) => ({
       ...prev,
-      [key]: type === "number" ? Number(value) : value,
+      [key]: type === "number" ? Number(value) : type === "checkbox" ? Boolean(value) : value,
     }));
   };
 
@@ -96,13 +104,35 @@ function NodeDetailsPanel({ node, onClose, onSave, onDelete, isSaving }) {
           <label key={field.key} className="block space-y-2">
             <span className="text-[10px] font-bold uppercase text-slate-400">{field.label}</span>
 
-            <input
-              className="w-full rounded-xl border border-[#a390f9]/10 bg-[#a390f9]/5 px-4 py-3 text-sm font-medium focus:border-[#a390f9] focus:ring-1 focus:ring-[#a390f9]"
-              type={field.type}
-              value={formState[field.key] ?? ""}
-              disabled={field.disabled}
-              onChange={(event) => handleChange(field.key, event.target.value, field.type)}
-            />
+            {field.type === "select" ? (
+              <select
+                className="w-full rounded-xl border border-[#a390f9]/10 bg-[#a390f9]/5 px-4 py-3 text-sm font-medium focus:border-[#a390f9] focus:ring-1 focus:ring-[#a390f9]"
+                value={formState[field.key] ?? ""}
+                onChange={(event) => handleChange(field.key, event.target.value, "text")}
+              >
+                {field.options.map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            ) : field.type === "checkbox" ? (
+              <div className="flex items-center gap-3 pt-1">
+                <input
+                  type="checkbox"
+                  className="h-5 w-5 rounded border-[#a390f9]/20 text-[#a390f9] focus:ring-[#a390f9]"
+                  checked={!!formState[field.key]}
+                  onChange={(event) => handleChange(field.key, event.target.checked, "checkbox")}
+                />
+                <span className="text-sm text-slate-600">{formState[field.key] ? "Yes" : "No"}</span>
+              </div>
+            ) : (
+              <input
+                className="w-full rounded-xl border border-[#a390f9]/10 bg-[#a390f9]/5 px-4 py-3 text-sm font-medium focus:border-[#a390f9] focus:ring-1 focus:ring-[#a390f9]"
+                type={field.type}
+                value={formState[field.key] ?? ""}
+                disabled={field.disabled}
+                onChange={(event) => handleChange(field.key, event.target.value, field.type)}
+              />
+            )}
           </label>
         ))}
 

@@ -43,6 +43,11 @@ export const graphApi = {
     const { data } = await api.get("/graph", { params });
     return data;
   },
+  getNodeCatalog: async (type) => {
+    const params = type ? { type } : {};
+    const { data } = await api.get("/nodes/catalog", { params });
+    return data;
+  },
   createNode: async (payload) => {
     const { data } = await api.post("/nodes", payload);
     return data;
@@ -71,6 +76,37 @@ export const graphApi = {
   resetGraph: async (workspaceId) => {
     const params = workspaceId ? { workspace: workspaceId } : {};
     const { data } = await api.post("/graph/reset", null, { params });
+    return data;
+  },
+};
+
+// ── Catalog API (entity catalog CRUD) ───────────────────────────────────────
+export const catalogApi = {
+  list: async (type, search) => {
+    const params = {};
+    if (type) params.type = type;
+    if (search) params.search = search;
+    const { data } = await api.get("/catalog", { params });
+    return data;
+  },
+  get: async (catalogId) => {
+    const { data } = await api.get(`/catalog/${catalogId}`);
+    return data;
+  },
+  create: async (payload) => {
+    const { data } = await api.post("/catalog", payload);
+    return data;
+  },
+  update: async (catalogId, payload) => {
+    const { data } = await api.patch(`/catalog/${catalogId}`, payload);
+    return data;
+  },
+  delete: async (catalogId) => {
+    const { data } = await api.delete(`/catalog/${catalogId}`);
+    return data;
+  },
+  seed: async () => {
+    const { data } = await api.post("/catalog/seed");
     return data;
   },
 };
