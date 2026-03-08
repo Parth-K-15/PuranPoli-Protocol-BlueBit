@@ -49,6 +49,7 @@ export default function RiskAnalysisPage() {
   const [sortBy, setSortBy] = useState("risk_score");
   const [sortDir, setSortDir] = useState("desc");
   const [filterType, setFilterType] = useState("all");
+  const [showSpofDetails, setShowSpofDetails] = useState(false);
 
   const [computing, setComputing] = useState(false);
   const activeWorkspace = workspaces.find((w) => w._id === activeWorkspaceId);
@@ -187,6 +188,7 @@ export default function RiskAnalysisPage() {
   // All node predictions (for enriched SPOF reasons)
   const nodePredsMap = {};
   (analytics?.node_predictions || []).forEach((p) => { nodePredsMap[p.node_id] = p; });
+  const spofNodes = (analytics?.node_predictions || []).filter((p) => p.is_articulation_point);
 
   return (
     <div className="flex flex-col gap-6 p-4 sm:p-6 lg:gap-8 lg:p-8">
@@ -278,15 +280,22 @@ export default function RiskAnalysisPage() {
         <>
           {/* KPI summary row */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-[#b1b2ff]/10 bg-white p-5 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setShowSpofDetails((prev) => !prev)}
+              className="rounded-2xl border border-[#b1b2ff]/10 bg-white p-5 text-left shadow-sm transition hover:border-[#b1b2ff]/40 hover:bg-[#b1b2ff]/5"
+            >
               <p className="text-xs text-slate-500">Single Point Failures</p>
               <p className="text-2xl font-black text-slate-900">
                 {liveSummary?.single_point_failures ?? 0}
               </p>
-              <p className="text-[11px] text-slate-400">
+              <p className="mt-0.5 text-[11px] text-slate-400">
                 articulation points in this chain
               </p>
-            </div>
+              <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-[#6d6fd8]">
+                {showSpofDetails ? "Hide identified points" : "Click to view identified points"}
+              </p>
+            </button>
 
             <div className="rounded-2xl border border-[#b1b2ff]/10 bg-white p-5 shadow-sm">
               <p className="text-xs text-slate-500">Geographic Concentration (HHI)</p>
@@ -317,17 +326,49 @@ export default function RiskAnalysisPage() {
             </div>
           </div>
 
+          {showSpofDetails && (
+            <div className="rounded-2xl border border-red-200 bg-red-50/40 p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between">
+                <h4 className="text-xs font-bold uppercase tracking-widest text-red-700">
+                  Identified Single Points Of Failure
+                </h4>
+                <span className="text-[11px] font-semibold text-red-600">{spofNodes.length} found</span>
+              </div>
+
+              {spofNodes.length === 0 ? (
+                <p className="text-sm text-slate-500">No articulation-point SPOFs detected in the selected workspace.</p>
+              ) : (
+                <div className="space-y-2">
+                  {spofNodes.slice(0, 10).map((item, idx) => (
+                    <div key={item.node_id || idx} className="rounded-lg border border-red-100 bg-white px-3 py-2">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800">{item.name}</p>
+                          <p className="text-[11px] text-slate-500">{item.country} • {item.type} • in {item.in_degree} / out {item.out_degree}</p>
+                        </div>
+                        <span className="text-xs font-bold text-red-600">risk {item.predicted_risk}</span>
+                      </div>
+                      {item.spof_reasons?.length > 0 && (
+                        <p className="mt-1 text-[10px] italic text-slate-500">{item.spof_reasons.join(" · ")}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             {/* ── SPOF Panel ─────────────────────────────────────────── */}
             <div className="rounded-2xl border border-[#b1b2ff]/10 bg-white p-6 shadow-sm">
               <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-slate-400">
                 Single Point Of Failure Identification
               </h3>
-              {vulnerabilities.length === 0 ? (
+              {spofNodes.length === 0 ? (
                 <p className="text-sm text-slate-400">No SPOFs detected in this chain.</p>
               ) : (
                 <div className="space-y-2">
-                  {vulnerabilities.slice(0, 5).map((item, idx) => (
+                  {spofNodes.slice(0, 5).map((item, idx) => (
                     <div
                       key={item.node_id || idx}
                       className="rounded-lg border border-red-100 bg-red-50/40 px-3 py-2"

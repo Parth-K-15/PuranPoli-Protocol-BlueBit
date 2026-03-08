@@ -466,9 +466,15 @@ def _compute_graph_predictions(
         total_deg = in_deg + out_deg
         centrality = total_deg / (n_total - 1) if n_total > 1 else 0.0
 
-        is_ap = node_id in ap_set
+        # Raw articulation point from topology (undirected cut-vertex).
+        is_ap_raw = node_id in ap_set
         # Bottleneck = multiple inputs AND has at least one output
         is_bottleneck = in_deg >= 2 and out_deg >= 1
+
+        # SPOF guardrail: ignore edge/corner nodes (pure sources/sinks).
+        # A "true" SPOF for this app must sit in the middle of flow.
+        is_edge_node = in_deg == 0 or out_deg == 0
+        is_ap = is_ap_raw and (not is_edge_node) and total_deg >= 3
 
         # Base risk: prefer value stored on the node (set from catalog / manual entry)
         base_risk = float(data.get("risk_score") or 50)
@@ -553,6 +559,7 @@ def _compute_graph_predictions(
                 "in_degree": in_deg,
                 "out_degree": out_deg,
                 "is_articulation_point": is_ap,
+                "is_articulation_point_raw": is_ap_raw,
                 "is_bottleneck": is_bottleneck,
                 "is_vulnerable": is_vulnerable,
                 "dependency": dep_pct,
@@ -630,7 +637,9 @@ def _compute_graph_predictions(
         "mismatch_ranking": mismatch_ranking,
         "node_predictions": node_predictions,
         "geographic_risk": geo_risk,
-        "articulation_points": list(ap_set),
+        "articulation_points": [
+            p["node_id"] for p in node_predictions if p["is_articulation_point"]
+        ],
     }
 
 
