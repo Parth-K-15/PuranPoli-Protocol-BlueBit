@@ -8,6 +8,11 @@ const edgeSchema = new mongoose.Schema(
       unique: true,
       trim: true,
     },
+    workspace: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Workspace",
+      default: null,
+    },
     source_node: {
       type: String,
       required: true,

@@ -11,6 +11,7 @@ const errorHandler = require("./src/middlewares/errorHandler");
 const notFound = require("./src/middlewares/notFound");
 const healthRoutes = require("./src/routes/healthRoutes");
 const graphRoutes = require("./src/routes/graphRoutes");
+const workspaceRoutes = require("./src/routes/workspaceRoutes");
 
 const app = express();
 
@@ -27,6 +28,7 @@ if (process.env.NODE_ENV === "development") {
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use("/api/v1/health", healthRoutes);
+app.use("/api/v1/workspaces", workspaceRoutes);
 app.use("/api/v1", graphRoutes);
 
 // ── Error Handling ────────────────────────────────────────────────────────────

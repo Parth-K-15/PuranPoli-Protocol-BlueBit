@@ -8,12 +8,14 @@ const {
   createEdge,
   deleteEdge,
   loadDemo,
+  resetGraph,
 } = require("../controllers/graphController");
 
 const router = express.Router();
 
 router.get("/graph", getGraph);
 router.post("/graph/demo", loadDemo);
+router.post("/graph/reset", resetGraph);
 
 router.post("/nodes", createNode);
 router.patch("/nodes/:id", updateNode);
