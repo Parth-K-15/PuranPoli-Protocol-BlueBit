@@ -268,7 +268,10 @@ def demand_supply_mismatch(limit: int = 20) -> Dict[str, object]:
         (1 - view["capacity_utilization_pct"]) * 0.35
         + view["financial_health_score"] * 0.30
         + (1 - view["batch_failure_rate_pct"]) * 0.20
-        + (view["production_capacity_units_month"] / view["production_capacity_units_month"].max())
+        + (
+            view["production_capacity_units_month"]
+            / view["production_capacity_units_month"].max()
+        )
         * 0.15
     )
 
