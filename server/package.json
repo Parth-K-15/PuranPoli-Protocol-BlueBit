@@ -12,6 +12,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "axios": "^1.13.6",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^4.22.1",
@@ -20,7 +21,10 @@
     "http-status-codes": "^2.3.0",
     "mongoose": "^9.2.4",
     "morgan": "^1.10.1",
-    "neo4j-driver": "^6.0.1"
+    "neo4j-driver": "^6.0.1",
+    "node-cron": "^4.2.1",
+    "rss-parser": "^3.13.0",
+    "sentiment": "^5.0.2"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

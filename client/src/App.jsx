@@ -9,6 +9,9 @@ import ReportsPage from "./pages/ReportsPage";
 import DataManagementPage from "./pages/DataManagementPage";
 import SettingsPage from "./pages/SettingsPage";
 
+import Disruptions from "./pages/Disruptions";
+import LiveIntelFeed from "./pages/LiveIntelFeed";
+
 const router = createBrowserRouter([
   {
     path: "/",
@@ -21,6 +24,8 @@ const router = createBrowserRouter([
       { path: "reports", element: <ReportsPage /> },
       { path: "data", element: <DataManagementPage /> },
       { path: "settings", element: <SettingsPage /> },
+      { path: "disruptions", element: <Disruptions /> },
+      { path: "live-feed", element: <LiveIntelFeed /> },
     ],
   },
 ]);
