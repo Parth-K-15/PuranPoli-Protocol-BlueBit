@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { graphApi } from "../services/api";
+import { getDisruptions, getHighRisk } from "../services/disruptionApi";
 
 function KpiCard({ icon, iconClass, label, value, sub }) {
   return (
@@ -26,52 +27,78 @@ function RiskBadge({ score }) {
 
 function DashboardPage() {
   const [stats, setStats] = useState(null);
+  const [disruptions, setDisruptions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [computing, setComputing] = useState(false);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const data = await graphApi.getGraph();
-        const nodes = data.nodes || [];
-        const edges = data.edges || [];
+  const load = async () => {
+    try {
+      const [graphData, disruptionRes] = await Promise.all([
+        graphApi.getGraph(),
+        getHighRisk().catch(() => ({ data: [] })),
+      ]);
 
-        const riskScores = nodes.map((n) => n.data?.risk_score || 0);
-        const avgRisk = riskScores.length
-          ? Math.round(riskScores.reduce((a, b) => a + b, 0) / riskScores.length)
-          : 0;
+      const nodes = graphData.nodes || [];
+      const edges = graphData.edges || [];
 
-        const highRiskNodes = nodes.filter((n) => (n.data?.risk_score || 0) > 60);
+      const riskScores = nodes.map((n) => n.data?.risk_score || 0);
+      const avgRisk = riskScores.length
+        ? Math.round(riskScores.reduce((a, b) => a + b, 0) / riskScores.length)
+        : 0;
 
-        const typeCounts = {};
-        nodes.forEach((n) => {
-          const t = n.data?.type || "Unknown";
-          typeCounts[t] = (typeCounts[t] || 0) + 1;
-        });
+      const highRiskNodes = nodes.filter((n) => (n.data?.risk_score || 0) > 60);
 
-        const countryCounts = {};
-        nodes.forEach((n) => {
-          const c = n.data?.country || "Unassigned";
-          countryCounts[c] = (countryCounts[c] || 0) + 1;
-        });
+      const typeCounts = {};
+      nodes.forEach((n) => {
+        const t = n.data?.type || "Unknown";
+        typeCounts[t] = (typeCounts[t] || 0) + 1;
+      });
 
-        setStats({
-          totalNodes: nodes.length,
-          totalEdges: edges.length,
-          avgRisk,
-          highRiskNodes,
-          typeCounts,
-          countryCounts,
-          nodes,
-        });
-      } catch (error) {
-        console.error("Failed to load dashboard data", error);
-      } finally {
-        setLoading(false);
-      }
+      const countryCounts = {};
+      nodes.forEach((n) => {
+        const c = n.data?.country || "Unassigned";
+        countryCounts[c] = (countryCounts[c] || 0) + 1;
+      });
+
+      // Count risk probabilities
+      const probCounts = { Low: 0, Moderate: 0, High: 0, Critical: 0 };
+      nodes.forEach((n) => {
+        const p = n.data?.risk_probability || "Low";
+        if (probCounts[p] !== undefined) probCounts[p]++;
+      });
+
+      setStats({
+        totalNodes: nodes.length,
+        totalEdges: edges.length,
+        avgRisk,
+        highRiskNodes,
+        typeCounts,
+        countryCounts,
+        nodes,
+        probCounts,
+      });
+
+      setDisruptions((disruptionRes.data || []).slice(0, 10));
+    } catch (error) {
+      console.error("Failed to load dashboard data", error);
+    } finally {
+      setLoading(false);
     }
+  };
 
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
+
+  const handleComputeRisks = async () => {
+    setComputing(true);
+    try {
+      await graphApi.computeRisks();
+      await load();
+    } catch (error) {
+      console.error("Failed to compute risks", error);
+    } finally {
+      setComputing(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -115,13 +142,24 @@ function DashboardPage() {
   return (
     <div className="flex flex-col gap-8 p-8">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
-        <p className="text-sm text-slate-500">Supply chain overview and key metrics</p>
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
+          <p className="text-sm text-slate-500">Supply chain overview and key metrics</p>
+        </div>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-xl border border-orange-200 bg-orange-50 px-5 py-2.5 text-xs font-bold text-orange-700 hover:bg-orange-100 disabled:opacity-50"
+          onClick={handleComputeRisks}
+          disabled={computing}
+        >
+          <span className="material-symbols-outlined text-[16px]">{computing ? "sync" : "shield"}</span>
+          {computing ? "Computing…" : "Compute Risks"}
+        </button>
       </div>
 
       {/* KPI Strip */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <KpiCard icon="hub" iconClass="bg-[#a390f9]/10 text-[#a390f9]" label="Total Nodes" value={stats.totalNodes} />
         <KpiCard icon="timeline" iconClass="bg-blue-50 text-blue-600" label="Total Edges" value={stats.totalEdges} />
         <KpiCard
@@ -138,7 +176,31 @@ function DashboardPage() {
           value={stats.highRiskNodes.length}
           sub={`of ${stats.totalNodes} total`}
         />
+        <KpiCard
+          icon="bolt"
+          iconClass="bg-orange-50 text-orange-600"
+          label="Active Disruptions"
+          value={disruptions.length}
+          sub="Severity ≥ 60"
+        />
       </div>
+
+      {/* Risk Probability Distribution */}
+      {stats.totalNodes > 0 && (
+        <div className="grid grid-cols-4 gap-3">
+          {[
+            { label: "Low", color: "bg-green-100 text-green-700 border-green-200", count: stats.probCounts.Low },
+            { label: "Moderate", color: "bg-yellow-100 text-yellow-700 border-yellow-200", count: stats.probCounts.Moderate },
+            { label: "High", color: "bg-orange-100 text-orange-700 border-orange-200", count: stats.probCounts.High },
+            { label: "Critical", color: "bg-red-100 text-red-700 border-red-200", count: stats.probCounts.Critical },
+          ].map((item) => (
+            <div key={item.label} className={`flex items-center justify-between rounded-xl border p-3 ${item.color}`}>
+              <span className="text-xs font-bold">{item.label}</span>
+              <span className="text-lg font-black">{item.count}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Grid: Type breakdown + Geography + High-risk table */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -249,6 +311,10 @@ function DashboardPage() {
                   <th className="pb-3 pr-4">Type</th>
                   <th className="pb-3 pr-4">Country</th>
                   <th className="pb-3 pr-4">Risk</th>
+                  <th className="pb-3 pr-4">Probability</th>
+                  <th className="pb-3 pr-4">External</th>
+                  <th className="pb-3">Compliance</th>
+                  <th className="pb-3 pr-4">Risk</th>
                   <th className="pb-3 pr-4">Lead Time</th>
                   <th className="pb-3">Compliance</th>
                 </tr>
@@ -269,12 +335,53 @@ function DashboardPage() {
                         <RiskBadge score={node.data?.risk_score || 0} />
                         <span className="ml-2 text-xs font-bold">{node.data?.risk_score}%</span>
                       </td>
-                      <td className="py-3 pr-4">{node.data?.lead_time_days || 0}d</td>
+                      <td className="py-3 pr-4">
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                          node.data?.risk_probability === "Critical" ? "bg-red-100 text-red-700"
+                            : node.data?.risk_probability === "High" ? "bg-orange-100 text-orange-700"
+                            : node.data?.risk_probability === "Moderate" ? "bg-yellow-100 text-yellow-700"
+                            : "bg-green-100 text-green-700"
+                        }`}>{node.data?.risk_probability || "Low"}</span>
+                      </td>
+                      <td className="py-3 pr-4 text-xs font-bold">{node.data?.external_risk_score || 0}%</td>
                       <td className="py-3">{node.data?.compliance_status || "—"}</td>
                     </tr>
                   ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* External Disruption Alerts */}
+      {disruptions.length > 0 && (
+        <div className="rounded-2xl border border-orange-200 bg-orange-50/40 p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-orange-600">
+              <span className="material-symbols-outlined text-[16px]">bolt</span>
+              External Disruption Alerts
+            </h3>
+            <Link to="/disruptions" className="text-xs font-bold text-orange-600 hover:text-orange-800">View all →</Link>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {disruptions.slice(0, 6).map((d) => (
+              <div key={d._id} className="rounded-xl border border-orange-100 bg-white p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700">{d.event_type?.replace(/_/g, " ")}</span>
+                  <span className={`rounded px-2 py-0.5 text-[10px] font-bold ${
+                    d.severity_score >= 80 ? "bg-red-100 text-red-700"
+                      : d.severity_score >= 60 ? "bg-orange-100 text-orange-700"
+                      : "bg-yellow-100 text-yellow-700"
+                  }`}>{d.severity_score}</span>
+                </div>
+                <p className="mt-1 text-[11px] text-slate-500 line-clamp-2">{d.description}</p>
+                <div className="mt-2 flex items-center gap-2 text-[10px] text-slate-400">
+                  <span>{d.source_type}</span>
+                  <span>·</span>
+                  <span>{d.location}, {d.country}</span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

@@ -78,6 +78,19 @@ export const graphApi = {
     const { data } = await api.post("/graph/reset", null, { params });
     return data;
   },
+  computeRisks: async (workspaceId) => {
+    const params = workspaceId ? { workspace: workspaceId } : {};
+    const { data } = await api.post("/graph/compute-risks", null, { params });
+    return data;
+  },
+  getNodeDisruptions: async (nodeId) => {
+    const { data } = await api.get(`/nodes/${nodeId}/disruptions`);
+    return data;
+  },
+  getNodeIntelligence: async (nodeId) => {
+    const { data } = await api.get(`/nodes/${nodeId}/intelligence`);
+    return data;
+  },
 };
 
 // ── Catalog API (entity catalog CRUD) ───────────────────────────────────────

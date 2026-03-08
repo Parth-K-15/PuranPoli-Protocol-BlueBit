@@ -17,6 +17,24 @@ const fetchWeather = async ({ lat, lon }) => {
 };
 
 /**
+ * Fetch current weather by city name and optional country code.
+ * @param {string} city
+ * @param {string} [countryCode] — ISO 3166 country code e.g. "IR"
+ */
+const fetchWeatherByCity = async (city, countryCode) => {
+  if (!openweather.key) return null;
+  const q = countryCode ? `${city},${countryCode}` : city;
+  try {
+    const { data } = await axios.get(openweather.baseUrl, {
+      params: { q, units: "metric", appid: openweather.key },
+    });
+    return data;
+  } catch {
+    return null;
+  }
+};
+
+/**
  * Fetch weather for all active monitored locations from the database.
  * @returns {Promise<Array<{ location: object, weather: object }>>}
  */
@@ -35,4 +53,4 @@ const fetchAllWeather = async () => {
   return results;
 };
 
-module.exports = { fetchWeather, fetchAllWeather };
+module.exports = { fetchWeather, fetchWeatherByCity, fetchAllWeather };

@@ -47,6 +47,22 @@ function RiskAnalysisPage() {
   const [sortDir, setSortDir] = useState("desc");
   const [filterType, setFilterType] = useState("all");
 
+  const [computing, setComputing] = useState(false);
+
+  const handleComputeRisks = async () => {
+    setComputing(true);
+    try {
+      await graphApi.computeRisks();
+      const graphData = await graphApi.getGraph();
+      setNodes(graphData.nodes || []);
+      setEdges(graphData.edges || []);
+    } catch (error) {
+      console.error("Failed to compute risks", error);
+    } finally {
+      setComputing(false);
+    }
+  };
+
   useEffect(() => {
     async function load() {
       try {
@@ -129,9 +145,20 @@ function RiskAnalysisPage() {
   return (
     <div className="flex flex-col gap-8 p-8">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Risk Analysis</h1>
-        <p className="text-sm text-slate-500">Identify vulnerabilities across your supply chain</p>
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Risk Analysis</h1>
+          <p className="text-sm text-slate-500">Identify vulnerabilities across your supply chain</p>
+        </div>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-xl border border-orange-200 bg-orange-50 px-5 py-2.5 text-xs font-bold text-orange-700 hover:bg-orange-100 disabled:opacity-50"
+          onClick={handleComputeRisks}
+          disabled={computing}
+        >
+          <span className="material-symbols-outlined text-[16px]">{computing ? "sync" : "shield"}</span>
+          {computing ? "Computing\u2026" : "Compute Risks"}
+        </button>
       </div>
 
       {/* Summary cards */}
@@ -369,6 +396,10 @@ function RiskAnalysisPage() {
                 <th className="cursor-pointer pb-3 pr-4" onClick={() => toggleSort("risk_score")}>
                   <span className="flex items-center gap-1">Risk <SortIcon field="risk_score" /></span>
                 </th>
+                <th className="pb-3 pr-4">Probability</th>
+                <th className="cursor-pointer pb-3 pr-4" onClick={() => toggleSort("external_risk_score")}>
+                  <span className="flex items-center gap-1">External <SortIcon field="external_risk_score" /></span>
+                </th>
                 <th className="cursor-pointer pb-3 pr-4" onClick={() => toggleSort("reliability_score")}>
                   <span className="flex items-center gap-1">Reliability <SortIcon field="reliability_score" /></span>
                 </th>
@@ -394,6 +425,15 @@ function RiskAnalysisPage() {
                       <span className="text-xs font-bold">{node.data?.risk_score}%</span>
                     </div>
                   </td>
+                  <td className="py-3 pr-4">
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                      node.data?.risk_probability === "Critical" ? "bg-red-100 text-red-700"
+                        : node.data?.risk_probability === "High" ? "bg-orange-100 text-orange-700"
+                        : node.data?.risk_probability === "Moderate" ? "bg-yellow-100 text-yellow-700"
+                        : "bg-green-100 text-green-700"
+                    }`}>{node.data?.risk_probability || "Low"}</span>
+                  </td>
+                  <td className="py-3 pr-4 text-xs font-bold">{node.data?.external_risk_score || 0}%</td>
                   <td className="py-3 pr-4 text-xs">{node.data?.reliability_score ?? "—"}</td>
                   <td className="py-3 pr-4 text-xs">{node.data?.lead_time_days ?? 0}d</td>
                   <td className="py-3">

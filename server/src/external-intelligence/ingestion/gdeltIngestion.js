@@ -1,12 +1,13 @@
 const { fetchGoogleNewsArticles } = require("../services/gdeltService");
 const { detectKeywords } = require("../detection/keywordEngine");
+const { detectCountry } = require("../detection/countryDetector");
 const { analyseSentiment } = require("../detection/sentimentEngine");
 const { scoreNewsSignal } = require("../scoring/disruptionScorer");
 const DisruptionEvent = require("../../models/disruptionEvent");
 
 /**
  * Google News RSS ingestion pipeline:
- *  fetch articles → keyword detect → sentiment → score → aggregate → store
+ *  fetch articles → keyword detect → country detect → sentiment → score → aggregate → store
  */
 const ingestGoogleNews = async () => {
   console.log("[GoogleNewsIngestion] Starting Google News RSS ingestion…");
@@ -24,6 +25,7 @@ const ingestGoogleNews = async () => {
     if (!kwResult) continue;
 
     const sentiment = analyseSentiment(text);
+    const country = detectCountry(text);
 
     analysed.push({
       title: article.title,
@@ -34,6 +36,8 @@ const ingestGoogleNews = async () => {
       matched_keywords: kwResult.matched_keywords,
       keyword_intensity: kwResult.keyword_intensity_score,
       sentiment_compound: sentiment.compound,
+      country: country?.name || "Global",
+      location: country?.capital || "Global",
     });
   }
 
@@ -42,16 +46,17 @@ const ingestGoogleNews = async () => {
     return [];
   }
 
-  // ── Aggregation by event_type ───────────────────────────────────────────────
+  // ── Aggregation by country + event_type ─────────────────────────────────────
   const groups = {};
   for (const a of analysed) {
-    const key = a.event_type;
+    const key = `${a.country}::${a.event_type}`;
     if (!groups[key]) groups[key] = [];
     groups[key].push(a);
   }
 
   const saved = [];
-  for (const [eventType, items] of Object.entries(groups)) {
+  for (const [compositeKey, items] of Object.entries(groups)) {
+    const [country, eventType] = compositeKey.split("::");
     const avgKw =
       items.reduce((s, i) => s + i.keyword_intensity, 0) / items.length;
     const avgSentiment =
@@ -67,13 +72,16 @@ const ingestGoogleNews = async () => {
       {
         event_type: eventType,
         source_type: "google_news",
+        country: country,
         detected_at: { $gte: startOfDay() },
       },
       {
         $set: {
           severity_score: severity,
-          description: `${items.length} Google News article(s) for ${eventType.replace(/_/g, " ")}. Avg sentiment: ${avgSentiment.toFixed(2)}.`,
+          description: `${items.length} Google News article(s) for ${eventType.replace(/_/g, " ")}${country !== "Global" ? ` in ${country}` : ""}. Avg sentiment: ${avgSentiment.toFixed(2)}.`,
           raw_source_url: items[0].url,
+          location: items[0].location,
+          country: country,
         },
         $push: {
           related_articles: {
@@ -87,10 +95,6 @@ const ingestGoogleNews = async () => {
             })),
             $slice: -50,
           },
-        },
-        $setOnInsert: {
-          location: "Global",
-          country: "Multiple",
         },
       },
       { upsert: true, new: true }

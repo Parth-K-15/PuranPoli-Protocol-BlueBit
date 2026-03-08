@@ -7,6 +7,7 @@ const Workspace = require("../models/Workspace");
 const { demoNodes, demoEdges } = require("../data/demoGraph");
 const { nodeCatalog } = require("../data/nodeCatalog");
 const { CatalogItem } = require("../models/CatalogItem");
+const { computeAllNodeRisks, getDisruptionsForNode, getNodeIntelligence } = require("../services/riskEngine");
 
 const toReactFlowNode = (nodeDoc) => ({
   id: nodeDoc.id,
@@ -32,6 +33,9 @@ const toReactFlowNode = (nodeDoc) => ({
     contract_duration_months: nodeDoc.contract_duration_months,
     batch_cycle_time_days: nodeDoc.batch_cycle_time_days,
     financial_health_score: nodeDoc.financial_health_score,
+    risk_probability: nodeDoc.risk_probability || "Low",
+    external_risk_score: nodeDoc.external_risk_score || 0,
+    last_risk_update: nodeDoc.last_risk_update,
   },
   type: "supplyNode",
 });
@@ -381,6 +385,52 @@ const getNodeCatalog = async (req, res) => {
   res.status(StatusCodes.OK).json({ success: true, catalog: nodeCatalog });
 };
 
+// ── Risk computation ──────────────────────────────────────────────────────────
+const computeRisks = async (req, res) => {
+  const wsId = resolveWorkspace(req);
+  const filter = wsId ? { workspace: wsId } : {};
+  const results = await computeAllNodeRisks(filter);
+
+  res.status(StatusCodes.OK).json({
+    success: true,
+    message: `Risk scores updated for ${results.length} nodes`,
+    count: results.length,
+    nodes: results,
+  });
+};
+
+const nodeDisruptions = async (req, res) => {
+  const { id } = req.params;
+  const { node, disruptions } = await getDisruptionsForNode(id);
+
+  if (!node) {
+    return res.status(StatusCodes.NOT_FOUND).json({
+      success: false,
+      message: `Node ${id} not found`,
+    });
+  }
+
+  res.status(StatusCodes.OK).json({
+    success: true,
+    node,
+    disruptions,
+  });
+};
+
+const nodeIntelligence = async (req, res) => {
+  const { id } = req.params;
+  const intel = await getNodeIntelligence(id);
+
+  if (!intel) {
+    return res.status(StatusCodes.NOT_FOUND).json({
+      success: false,
+      message: `Node ${id} not found`,
+    });
+  }
+
+  res.status(StatusCodes.OK).json({ success: true, ...intel });
+};
+
 module.exports = {
   getGraph,
   createNode,
@@ -391,4 +441,7 @@ module.exports = {
   loadDemo,
   resetGraph,
   getNodeCatalog,
+  computeRisks,
+  nodeDisruptions,
+  nodeIntelligence,
 };

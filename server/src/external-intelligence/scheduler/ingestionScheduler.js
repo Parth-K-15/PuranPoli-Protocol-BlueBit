@@ -2,6 +2,7 @@ const cron = require("node-cron");
 const { ingestNews } = require("../ingestion/newsIngestion");
 const { ingestWeather } = require("../ingestion/weatherIngestion");
 const { ingestGoogleNews } = require("../ingestion/gdeltIngestion");
+const { computeAllNodeRisks } = require("../../services/riskEngine");
 
 /**
  * Register all cron jobs for external signal ingestion.
@@ -57,6 +58,15 @@ const runAllNow = async () => {
       console.error(`[Scheduler] ${label} one-shot failed:`, r.reason?.message);
     }
   });
+
+  // Recompute node risk scores after fresh disruption data
+  try {
+    const riskResults = await computeAllNodeRisks();
+    console.log(`[Scheduler] Risk scores updated for ${riskResults.length} nodes.`);
+  } catch (err) {
+    console.error("[Scheduler] Risk computation failed:", err.message);
+  }
+
   return results;
 };
 

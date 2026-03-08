@@ -1,12 +1,13 @@
 const { fetchNewsArticles } = require("../services/newsService");
 const { detectKeywords } = require("../detection/keywordEngine");
+const { detectCountry } = require("../detection/countryDetector");
 const { analyseSentiment } = require("../detection/sentimentEngine");
 const { scoreNewsSignal } = require("../scoring/disruptionScorer");
 const DisruptionEvent = require("../../models/disruptionEvent");
 
 /**
  * Full news ingestion pipeline:
- *  fetch → keyword detect → sentiment → score → aggregate → store
+ *  fetch → keyword detect → country detect → sentiment → score → aggregate → store
  */
 const ingestNews = async () => {
   console.log("[NewsIngestion] Starting news ingestion…");
@@ -25,6 +26,7 @@ const ingestNews = async () => {
     if (!kwResult) continue; // Not supply-chain relevant
 
     const sentiment = analyseSentiment(text);
+    const country = detectCountry(text);
 
     analysed.push({
       title: article.title,
@@ -35,6 +37,8 @@ const ingestNews = async () => {
       matched_keywords: kwResult.matched_keywords,
       keyword_intensity: kwResult.keyword_intensity_score,
       sentiment_compound: sentiment.compound,
+      country: country?.name || "Global",
+      location: country?.capital || "Global",
     });
   }
 
@@ -43,17 +47,18 @@ const ingestNews = async () => {
     return [];
   }
 
-  // ── Aggregation: group by event_type ────────────────────────────────────────
+  // ── Aggregation: group by country + event_type ──────────────────────────────
   const groups = {};
   for (const a of analysed) {
-    const key = a.event_type;
+    const key = `${a.country}::${a.event_type}`;
     if (!groups[key]) groups[key] = [];
     groups[key].push(a);
   }
 
   // ── Create disruption events ────────────────────────────────────────────────
   const saved = [];
-  for (const [eventType, items] of Object.entries(groups)) {
+  for (const [compositeKey, items] of Object.entries(groups)) {
+    const [country, eventType] = compositeKey.split("::");
     const avgKw =
       items.reduce((s, i) => s + i.keyword_intensity, 0) / items.length;
     const avgSent =
@@ -69,13 +74,16 @@ const ingestNews = async () => {
       {
         event_type: eventType,
         source_type: "news",
+        country: country,
         detected_at: { $gte: startOfDay() },
       },
       {
         $set: {
           severity_score: severity,
-          description: buildDescription(eventType, items),
+          description: buildDescription(eventType, items, country),
           raw_source_url: items[0].url,
+          location: items[0].location,
+          country: country,
         },
         $push: {
           related_articles: {
@@ -89,10 +97,6 @@ const ingestNews = async () => {
             })),
             $slice: -50, // keep last 50
           },
-        },
-        $setOnInsert: {
-          location: "Global",
-          country: "Multiple",
         },
       },
       { upsert: true, new: true }
@@ -113,9 +117,10 @@ function startOfDay() {
   return d;
 }
 
-function buildDescription(eventType, items) {
+function buildDescription(eventType, items, country) {
   const label = eventType.replace(/_/g, " ");
-  return `${items.length} article(s) detected for ${label}. Top keywords: ${[
+  const region = country !== "Global" ? ` in ${country}` : "";
+  return `${items.length} article(s) detected for ${label}${region}. Top keywords: ${[
     ...new Set(items.flatMap((i) => i.matched_keywords)),
   ].join(", ")}`;
 }

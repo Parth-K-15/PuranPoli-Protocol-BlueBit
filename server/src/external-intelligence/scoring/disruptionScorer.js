@@ -30,18 +30,48 @@ const scoreNewsSignal = ({
 // ── Weather scoring ────────────────────────────────────────────────────────────
 
 const WEATHER_BANDS = {
-  storm: 80,
-  heavy_rain: 60,
+  tsunami: 95,
+  cyclone: 90,
+  hurricane: 90,
+  typhoon: 90,
+  tornado: 85,
   flood: 85,
+  storm: 80,
+  blizzard: 75,
+  thunderstorm: 60,
+  heavy_rain: 60,
   heatwave: 40,
   extreme_cold: 45,
 };
 
-const scoreWeatherSignal = ({ wind_speed = 0, rain_mm = 0, temp_c = 0, alerts = [] }) => {
+// OWM description keywords → severity band mapping
+const DESC_SEVERITY = [
+  { pattern: /tsunami/i, band: "tsunami" },
+  { pattern: /cyclone/i, band: "cyclone" },
+  { pattern: /hurricane/i, band: "hurricane" },
+  { pattern: /typhoon/i, band: "typhoon" },
+  { pattern: /tornado/i, band: "tornado" },
+  { pattern: /flood/i, band: "flood" },
+  { pattern: /blizzard/i, band: "blizzard" },
+  { pattern: /thunderstorm/i, band: "thunderstorm" },
+];
+
+const scoreWeatherSignal = ({ wind_speed = 0, rain_mm = 0, temp_c = 0, alerts = [], description = "" }) => {
   let severity = 0;
 
-  if (wind_speed > 20) severity = Math.max(severity, WEATHER_BANDS.storm);
-  if (rain_mm > 50) severity = Math.max(severity, WEATHER_BANDS.heavy_rain);
+  // Check weather description text for severe patterns
+  const desc = (description || "").toLowerCase();
+  for (const { pattern, band } of DESC_SEVERITY) {
+    if (pattern.test(desc)) {
+      severity = Math.max(severity, WEATHER_BANDS[band] || 0);
+    }
+  }
+
+  // Threshold-based checks
+  if (wind_speed > 30) severity = Math.max(severity, WEATHER_BANDS.cyclone);
+  else if (wind_speed > 20) severity = Math.max(severity, WEATHER_BANDS.storm);
+  if (rain_mm > 100) severity = Math.max(severity, WEATHER_BANDS.flood);
+  else if (rain_mm > 50) severity = Math.max(severity, WEATHER_BANDS.heavy_rain);
   if (temp_c > 40) severity = Math.max(severity, WEATHER_BANDS.heatwave);
   if (temp_c < -20) severity = Math.max(severity, WEATHER_BANDS.extreme_cold);
   if (alerts.length > 0) severity = Math.max(severity, WEATHER_BANDS.flood);

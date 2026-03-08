@@ -128,6 +128,16 @@ function GraphBuilderPage() {
     }
   };
 
+  const handleComputeRisks = async () => {
+    try {
+      await graphApi.computeRisks(activeWorkspaceId);
+      setSelectedNode(null);
+      setRefreshToken((prev) => prev + 1);
+    } catch (error) {
+      console.error("Failed to compute risks", error);
+    }
+  };
+
   return (
     <ReactFlowProvider>
       <div className="flex h-full flex-col">
@@ -207,6 +217,15 @@ function GraphBuilderPage() {
           </div>
 
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded-xl border border-orange-200 bg-orange-50 px-4 py-2 text-xs font-bold text-orange-700 hover:bg-orange-100"
+              onClick={handleComputeRisks}
+              title="Recalculate risk scores using external disruptions"
+            >
+              <span className="material-symbols-outlined text-[16px]">shield</span>
+              Compute Risks
+            </button>
             <button
               type="button"
               className="rounded-xl border border-[#a390f9]/30 bg-white px-4 py-2 text-xs font-bold text-[#6f59d9] hover:bg-[#a390f9]/5"

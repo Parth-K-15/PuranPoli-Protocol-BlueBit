@@ -13,20 +13,17 @@ const typeStyles = {
   Retailer: "border-rose-400 bg-rose-50 text-rose-900",
 };
 
-const riskClass = (riskScore = 0) => {
+const riskClass = (riskScore = 0, riskProbability) => {
+  if (riskProbability === "Critical" || riskScore > 80) {
+    return "ring-2 ring-red-500 shadow-red-400/40 shadow-lg";
+  }
+  if (riskProbability === "High" || riskScore > 60) {
+    return "ring-2 ring-red-400 shadow-red-300/30 shadow-lg";
+  }
   if (riskScore <= 30) {
     return "ring-2 ring-green-400";
   }
-
-  if (riskScore <= 60) {
-    return "ring-2 ring-yellow-400";
-  }
-
-  if (riskScore <= 80) {
-    return "ring-2 ring-orange-400";
-  }
-
-  return "ring-2 ring-red-500";
+  return "ring-2 ring-yellow-400";
 };
 
 function CustomNode({ data }) {
@@ -40,7 +37,11 @@ function CustomNode({ data }) {
 
   return (
     <div
-      className={`w-52 cursor-move rounded-2xl border-2 p-4 shadow-2xl shadow-[#a390f9]/10 transition-all ${typeClass} ${riskClass(data.risk_score)}`}
+      className={`w-52 cursor-move rounded-2xl border-2 p-4 transition-all ${
+        (data.risk_probability === "Critical" || data.risk_probability === "High")
+          ? "border-red-400 bg-red-50 text-red-900"
+          : typeClass
+      } ${riskClass(data.risk_score, data.risk_probability)}`}
     >
       <Handle type="target" position={Position.Left} className="!h-3 !w-3 !bg-[#a390f9]" />
 
@@ -64,9 +65,29 @@ function CustomNode({ data }) {
         <span className="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
           {data.country || "Unassigned"}
         </span>
+        {data.risk_probability && data.risk_probability !== "Low" && (
+          <span
+            className={`rounded px-2 py-0.5 text-[10px] font-bold ${
+              data.risk_probability === "Critical"
+                ? "bg-red-100 text-red-700"
+                : data.risk_probability === "High"
+                  ? "bg-orange-100 text-orange-700"
+                  : "bg-yellow-100 text-yellow-700"
+            }`}
+          >
+            {data.risk_probability}
+          </span>
+        )}
       </div>
 
-      <div className="mt-2 text-[10px] font-semibold text-slate-600">Risk {data.risk_score ?? 0}%</div>
+      <div className="mt-2 flex items-center justify-between">
+        <span className="text-[10px] font-semibold text-slate-600">Risk {data.risk_score ?? 0}%</span>
+        {data.external_risk_score > 0 && (
+          <span className="text-[9px] font-medium text-red-400" title="External disruption risk">
+            ⚡ {data.external_risk_score}%
+          </span>
+        )}
+      </div>
 
       <Handle type="source" position={Position.Right} className="!h-3 !w-3 !bg-[#a390f9]" />
     </div>

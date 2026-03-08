@@ -123,6 +123,22 @@ const nodeSchema = new mongoose.Schema(
       min: 0,
       max: 100,
     },
+    // ── Computed risk fields (set by risk engine) ─────────────
+    risk_probability: {
+      type: String,
+      enum: ["Low", "Moderate", "High", "Critical"],
+      default: "Low",
+    },
+    external_risk_score: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100,
+    },
+    last_risk_update: {
+      type: Date,
+      default: null,
+    },
     position: {
       x: {
         type: Number,
