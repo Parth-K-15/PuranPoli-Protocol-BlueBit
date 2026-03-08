@@ -10,6 +10,9 @@ function GraphBuilderPage() {
   const [selectedNode, setSelectedNode] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
+  const [libraryOpen, setLibraryOpen] = useState(true);
+  const [isComputingRisks, setIsComputingRisks] = useState(false);
+  const [risksDone, setRisksDone] = useState(false);
 
   // Workspace state
   const [workspaces, setWorkspaces] = useState([]);
@@ -134,12 +137,18 @@ function GraphBuilderPage() {
   };
 
   const handleComputeRisks = async () => {
+    setIsComputingRisks(true);
+    setRisksDone(false);
     try {
       await graphApi.computeRisks(activeWorkspaceId);
       setSelectedNode(null);
       setRefreshToken((prev) => prev + 1);
+      setRisksDone(true);
+      setTimeout(() => setRisksDone(false), 3000);
     } catch (error) {
       console.error("Failed to compute risks", error);
+    } finally {
+      setIsComputingRisks(false);
     }
   };
 
@@ -224,12 +233,33 @@ function GraphBuilderPage() {
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:gap-3">
             <button
               type="button"
-              className="flex items-center gap-1 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-bold text-orange-700 hover:bg-orange-100 sm:px-4"
+              disabled={isComputingRisks}
+              className={`flex items-center gap-1.5 rounded-xl border px-4 py-2 text-xs font-bold transition-all ${
+                risksDone
+                  ? "border-green-200 bg-green-50 text-green-700"
+                  : isComputingRisks
+                    ? "border-orange-200 bg-orange-50 text-orange-400 opacity-80 cursor-not-allowed"
+                    : "border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100"
+              }`}
               onClick={handleComputeRisks}
-              title="Recalculate risk scores using external disruptions"
+              title="Recalculate risk scores using external disruptions + live weather"
             >
-              <span className="material-symbols-outlined text-[16px]">shield</span>
-              Compute Risks
+              {isComputingRisks ? (
+                <>
+                  <span className="material-symbols-outlined animate-spin text-[16px]">progress_activity</span>
+                  Computing…
+                </>
+              ) : risksDone ? (
+                <>
+                  <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                  Done!
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-[16px]">shield</span>
+                  Compute Risks
+                </>
+              )}
             </button>
             <button
               type="button"
@@ -250,7 +280,7 @@ function GraphBuilderPage() {
 
         {/* Canvas area */}
         <div className="flex min-h-0 flex-1 overflow-hidden">
-          <NodeSidebar />
+          <NodeSidebar open={libraryOpen} onToggle={() => setLibraryOpen((p) => !p)} />
 
           <section className="graph-grid min-h-0 flex-1">
             <GraphCanvas

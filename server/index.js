@@ -16,6 +16,7 @@ const workspaceRoutes = require("./src/routes/workspaceRoutes");
 const disruptionRoutes = require("./src/external-intelligence/api/disruptionRoutes");
 const locationRoutes = require("./src/routes/locationRoutes");
 const catalogRoutes = require("./src/routes/catalogRoutes");
+const supplierRoutes = require("./src/routes/supplierRoutes");
 const MonitoredLocation = require("./src/models/monitoredLocation");
 const { startScheduler } = require("./src/external-intelligence/scheduler/ingestionScheduler");
 
@@ -39,6 +40,7 @@ app.use("/api/v1", graphRoutes);
 app.use("/api/v1/disruptions", disruptionRoutes);
 app.use("/api/v1/locations", locationRoutes);
 app.use("/api/v1", catalogRoutes);
+app.use("/api/v1/suppliers", supplierRoutes);
 
 // ── Error Handling ────────────────────────────────────────────────────────────
 app.use(notFound);

@@ -26,7 +26,7 @@ const riskClass = (riskScore = 0, riskProbability) => {
   return "ring-2 ring-yellow-400";
 };
 
-function CustomNode({ data }) {
+function CustomNode({ data, selected }) {
   const typeClass = typeStyles[data.type] || "border-slate-300 bg-white text-slate-900";
   const meta = NODE_META[data.type] || {
     icon: "hub",
@@ -41,7 +41,11 @@ function CustomNode({ data }) {
         (data.risk_probability === "Critical" || data.risk_probability === "High")
           ? "border-red-400 bg-red-50 text-red-900"
           : typeClass
-      } ${riskClass(data.risk_score, data.risk_probability)}`}
+      } ${
+        selected
+          ? "ring-4 ring-[#a390f9] ring-offset-2 shadow-xl shadow-[#a390f9]/40"
+          : riskClass(data.risk_score, data.risk_probability)
+      }`}
     >
       <Handle type="target" position={Position.Left} className="!h-3 !w-3 !bg-[#b1b2ff]" />
 

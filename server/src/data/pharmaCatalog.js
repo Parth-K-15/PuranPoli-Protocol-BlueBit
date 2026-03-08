@@ -240,4 +240,5 @@ const getPharmaCatalogAndSchema = () => {
 
 module.exports = {
   getPharmaCatalogAndSchema,
+  loadPharmaCsvRows,
 };

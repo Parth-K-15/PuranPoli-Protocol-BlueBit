@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { graphApi, catalogApi } from "../services/api";
+import { graphApi, catalogApi, supplierApi } from "../services/api";
 import { NODE_META, NODE_TYPES } from "../constants/nodeMeta";
 
 const CATALOG_FIELDS = [
@@ -49,6 +49,50 @@ const blankCatalogItem = () => ({
 const riskColor = (s) =>
   s <= 30 ? "text-emerald-600 bg-emerald-50" : s <= 60 ? "text-amber-600 bg-amber-50" : "text-red-600 bg-red-50";
 
+const SUPPLIER_FIELDS = [
+  { key: "name", label: "Display Name", type: "text", required: true, span: 2 },
+  { key: "supplier_id", label: "Supplier ID", type: "text" },
+  { key: "tier", label: "Tier", type: "select", options: [1, 2, 3], optionLabels: { 1: "Tier 1", 2: "Tier 2", 3: "Tier 3" } },
+  { key: "country", label: "Country", type: "text" },
+  { key: "region", label: "Region", type: "text" },
+  { key: "production_capacity", label: "Capacity (units/mo)", type: "number" },
+  { key: "avg_lead_time_days", label: "Avg Lead Time (days)", type: "number" },
+  { key: "composite_risk_score", label: "Risk Score (0–100)", type: "number" },
+  { key: "risk_classification", label: "Risk Class", type: "select", options: ["low", "moderate", "high", "critical"] },
+  { key: "financial_health_score", label: "Financial Health (0–100)", type: "number" },
+  { key: "dependency_pct", label: "Dependency %", type: "number" },
+  { key: "num_approved_alternates", label: "Approved Alternates", type: "number" },
+  { key: "contract_duration_months", label: "Contract (months)", type: "number" },
+  { key: "gmp_status", label: "GMP Certified", type: "checkbox" },
+  { key: "fda_approved", label: "FDA Approved", type: "checkbox" },
+  { key: "cold_chain_capable", label: "Cold Chain Capable", type: "checkbox" },
+  { key: "is_sole_source", label: "Sole Source", type: "checkbox" },
+  { key: "active_disruption_signal", label: "Active Disruption", type: "checkbox" },
+  { key: "compliance_violation_flag", label: "Compliance Violation", type: "checkbox" },
+];
+
+const blankSupplier = () => ({
+  name: "",
+  supplier_id: "",
+  tier: 2,
+  country: "",
+  region: "",
+  production_capacity: 0,
+  avg_lead_time_days: 0,
+  composite_risk_score: 0,
+  risk_classification: "moderate",
+  financial_health_score: 0,
+  dependency_pct: 0,
+  num_approved_alternates: 0,
+  contract_duration_months: 12,
+  gmp_status: false,
+  fda_approved: false,
+  cold_chain_capable: false,
+  is_sole_source: false,
+  active_disruption_signal: false,
+  compliance_violation_flag: false,
+});
+
 function DataManagementPage() {
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
@@ -63,6 +107,18 @@ function DataManagementPage() {
   const [formState, setFormState] = useState(blankCatalogItem());
   const [saving, setSaving] = useState(false);
   const fileInputRef = useRef(null);
+
+  // ── Supplier state ────────────────────────────────────────────────────────
+  const [suppliers, setSuppliers] = useState([]);
+  const [supplierTotal, setSupplierTotal] = useState(0);
+  const [supplierPage, setSupplierPage] = useState(1);
+  const [supplierSearch, setSupplierSearch] = useState("");
+  const [supplierTierFilter, setSupplierTierFilter] = useState("");
+  const [supplierRiskFilter, setSupplierRiskFilter] = useState("");
+  const [editingSupplier, setEditingSupplier] = useState(null);
+  const [supplierFormState, setSupplierFormState] = useState(blankSupplier());
+  const [savingSupplier, setSavingSupplier] = useState(false);
+  const [importingCsv, setImportingCsv] = useState(false);
 
   // ── Load graph data ───────────────────────────────────────────────────────
   const loadData = async () => {
@@ -93,14 +149,35 @@ function DataManagementPage() {
     }
   };
 
+  // ── Load suppliers ────────────────────────────────────────────────────────
+  const loadSuppliers = async (page = supplierPage) => {
+    try {
+      const params = { page, limit: 50 };
+      if (supplierSearch) params.search = supplierSearch;
+      if (supplierTierFilter) params.tier = supplierTierFilter;
+      if (supplierRiskFilter) params.risk = supplierRiskFilter;
+      const res = await supplierApi.list(params);
+      setSuppliers(res.suppliers || []);
+      setSupplierTotal(res.total ?? 0);
+    } catch (error) {
+      console.error("Failed to load suppliers", error);
+    }
+  };
+
   useEffect(() => {
     loadData();
     loadCatalog();
+    loadSuppliers(1);
   }, []);
 
   useEffect(() => {
     if (activeTab === "catalog") loadCatalog();
+    if (activeTab === "suppliers") loadSuppliers(1);
   }, [typeFilter, searchQuery, activeTab]);
+
+  useEffect(() => {
+    if (activeTab === "suppliers") loadSuppliers(1);
+  }, [supplierSearch, supplierTierFilter, supplierRiskFilter]);
 
   // ── Node / Edge handlers ──────────────────────────────────────────────────
   const handleDeleteNode = async (id) => {
@@ -241,6 +318,84 @@ function DataManagementPage() {
     }
   };
 
+  // ── Supplier CRUD handlers ────────────────────────────────────────────────
+  const handleImportCsv = async () => {
+    setImportingCsv(true);
+    try {
+      const res = await supplierApi.importCsv();
+      setImportStatus({ type: "success", message: res.message });
+      await loadSuppliers(1);
+    } catch (error) {
+      setImportStatus({ type: "error", message: "Failed to import CSV data" });
+    } finally {
+      setImportingCsv(false);
+    }
+  };
+
+  const openCreateSupplier = () => {
+    setEditingSupplier({});
+    setSupplierFormState(blankSupplier());
+  };
+
+  const openEditSupplier = (supplier) => {
+    setEditingSupplier(supplier);
+    const state = {};
+    for (const f of SUPPLIER_FIELDS) {
+      state[f.key] = supplier[f.key] ?? blankSupplier()[f.key];
+    }
+    setSupplierFormState(state);
+  };
+
+  const closeSupplierForm = () => setEditingSupplier(null);
+
+  const handleSupplierFormChange = (key, value, type) => {
+    setSupplierFormState((prev) => ({
+      ...prev,
+      [key]: type === "number" ? Number(value) : type === "checkbox" ? Boolean(value) : value,
+    }));
+  };
+
+  const handleSupplierFormSubmit = async (e) => {
+    e.preventDefault();
+    setSavingSupplier(true);
+    try {
+      if (editingSupplier._id) {
+        await supplierApi.update(editingSupplier._id, supplierFormState);
+      } else {
+        await supplierApi.create(supplierFormState);
+      }
+      closeSupplierForm();
+      await loadSuppliers(supplierPage);
+    } catch (error) {
+      console.error("Failed to save supplier", error);
+    } finally {
+      setSavingSupplier(false);
+    }
+  };
+
+  const handleDeleteSupplier = async (id) => {
+    if (!window.confirm("Delete this supplier record?")) return;
+    try {
+      await supplierApi.delete(id);
+      setSuppliers((prev) => prev.filter((s) => s._id !== id));
+      setSupplierTotal((t) => t - 1);
+    } catch (error) {
+      console.error("Failed to delete supplier", error);
+    }
+  };
+
+  const handleClearSuppliers = async () => {
+    if (!window.confirm("Delete ALL supplier records? This cannot be undone.")) return;
+    try {
+      await supplierApi.clearAll();
+      setSuppliers([]);
+      setSupplierTotal(0);
+      setImportStatus({ type: "success", message: "All supplier records cleared." });
+    } catch (error) {
+      console.error("Failed to clear suppliers", error);
+    }
+  };
+
   // ── Filtering ─────────────────────────────────────────────────────────────
   const filteredNodes = nodes.filter((n) => {
     if (!searchQuery) return true;
@@ -299,7 +454,40 @@ function DataManagementPage() {
               </button>
             </>
           )}
-          {activeTab !== "catalog" && (
+          {activeTab === "suppliers" && (
+            <>
+              <button
+                type="button"
+                className="flex items-center gap-1 rounded-xl border border-[#a390f9]/30 bg-white px-4 py-2 text-xs font-bold text-[#6f59d9] hover:bg-[#a390f9]/5 disabled:opacity-50"
+                onClick={handleImportCsv}
+                disabled={importingCsv}
+              >
+                <span className={`material-symbols-outlined text-[16px] ${importingCsv ? "animate-spin" : ""}`}>
+                  {importingCsv ? "progress_activity" : "upload_file"}
+                </span>
+                {importingCsv ? "Importing…" : "Import from CSV"}
+              </button>
+              <button
+                type="button"
+                className="flex items-center gap-1 rounded-xl bg-[#a390f9] px-4 py-2 text-xs font-bold text-white hover:bg-[#8f79f7]"
+                onClick={openCreateSupplier}
+              >
+                <span className="material-symbols-outlined text-[16px]">add</span>
+                New Supplier
+              </button>
+              {suppliers.length > 0 && (
+                <button
+                  type="button"
+                  className="flex items-center gap-1 rounded-xl bg-red-50 px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-100"
+                  onClick={handleClearSuppliers}
+                >
+                  <span className="material-symbols-outlined text-[16px]">delete_sweep</span>
+                  Clear All
+                </button>
+              )}
+            </>
+          )}
+          {activeTab !== "catalog" && activeTab !== "suppliers" && (
             <>
               <button
                 type="button"
@@ -392,6 +580,13 @@ function DataManagementPage() {
           >
             Edges ({edges.length})
           </button>
+          <button
+            type="button"
+            className={`rounded-lg px-4 py-2 text-xs font-bold transition-all ${activeTab === "suppliers" ? "bg-[#a390f9] text-white" : "text-slate-500 hover:text-slate-700"}`}
+            onClick={() => setActiveTab("suppliers")}
+          >
+            Suppliers ({supplierTotal})
+          </button>
         </div>
 
         <div className="flex items-center gap-3">
@@ -407,14 +602,39 @@ function DataManagementPage() {
               ))}
             </select>
           )}
+          {activeTab === "suppliers" && (
+            <>
+              <select
+                value={supplierTierFilter}
+                onChange={(e) => setSupplierTierFilter(e.target.value)}
+                className="rounded-xl border border-[#a390f9]/10 bg-white py-2 px-3 text-xs font-medium focus:border-[#a390f9] focus:ring-1 focus:ring-[#a390f9]"
+              >
+                <option value="">All Tiers</option>
+                <option value="1">Tier 1</option>
+                <option value="2">Tier 2</option>
+                <option value="3">Tier 3</option>
+              </select>
+              <select
+                value={supplierRiskFilter}
+                onChange={(e) => setSupplierRiskFilter(e.target.value)}
+                className="rounded-xl border border-[#a390f9]/10 bg-white py-2 px-3 text-xs font-medium focus:border-[#a390f9] focus:ring-1 focus:ring-[#a390f9]"
+              >
+                <option value="">All Risk</option>
+                <option value="low">Low</option>
+                <option value="moderate">Moderate</option>
+                <option value="high">High</option>
+                <option value="critical">Critical</option>
+              </select>
+            </>
+          )}
           <div className="relative">
             <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-slate-400">search</span>
             <input
               type="text"
               placeholder="Search..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="rounded-xl border border-[#b1b2ff]/10 bg-white py-2 pl-10 pr-4 text-sm focus:border-[#b1b2ff] focus:ring-1 focus:ring-[#b1b2ff]"
+              value={activeTab === "suppliers" ? supplierSearch : searchQuery}
+              onChange={(e) => activeTab === "suppliers" ? setSupplierSearch(e.target.value) : setSearchQuery(e.target.value)}
+              className="rounded-xl border border-[#a390f9]/10 bg-white py-2 pl-10 pr-4 text-sm focus:border-[#a390f9] focus:ring-1 focus:ring-[#a390f9]"
             />
           </div>
         </div>
@@ -610,6 +830,125 @@ function DataManagementPage() {
             </table>
           </div>
         )}
+
+        {/* ─── Suppliers Tab ───────────────────────────────────────────────── */}
+        {activeTab === "suppliers" && (
+          <div>
+            {suppliers.length === 0 ? (
+              <div className="flex flex-col items-center gap-3 py-16">
+                <span className="material-symbols-outlined text-5xl text-slate-300">factory</span>
+                <p className="text-sm text-slate-400">No supplier records yet.</p>
+                <p className="text-xs text-slate-400">Click "Import from CSV" to load the 500 pharma suppliers, or "New Supplier" to add one manually.</p>
+                <button
+                  type="button"
+                  className="mt-2 flex items-center gap-1 rounded-xl border border-[#a390f9]/30 bg-white px-5 py-2.5 text-xs font-bold text-[#6f59d9] hover:bg-[#a390f9]/5"
+                  onClick={handleImportCsv}
+                  disabled={importingCsv}
+                >
+                  <span className={`material-symbols-outlined text-[16px] ${importingCsv ? "animate-spin" : ""}`}>{importingCsv ? "progress_activity" : "upload_file"}</span>
+                  {importingCsv ? "Importing…" : "Import from CSV"}
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="divide-y divide-slate-100">
+                  {suppliers.map((s) => {
+                    const tierLabel = s.tier === 1 ? "Tier 1" : s.tier === 2 ? "Tier 2" : "Tier 3";
+                    const rc = s.risk_classification || "moderate";
+                    const rcColor = rc === "low" ? "bg-green-50 text-green-700" : rc === "moderate" ? "bg-amber-50 text-amber-700" : rc === "high" ? "bg-orange-50 text-orange-700" : "bg-red-50 text-red-700";
+                    return (
+                      <div key={s._id} className="group flex items-start gap-4 px-6 py-4 transition-colors hover:bg-slate-50/60">
+                        {/* Tier badge */}
+                        <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#a390f9]/10 text-[#6f59d9]">
+                          <span className="material-symbols-outlined text-[18px]">factory</span>
+                        </div>
+
+                        {/* Info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="truncate text-sm font-bold text-slate-900">{s.name}</p>
+                            <span className="rounded bg-[#a390f9]/10 px-2 py-0.5 text-[10px] font-medium text-[#6f59d9]">{tierLabel}</span>
+                            <span className={`rounded px-2 py-0.5 text-[10px] font-bold ${rcColor}`}>{rc.charAt(0).toUpperCase() + rc.slice(1)} Risk</span>
+                            {s.active_disruption_signal && (
+                              <span className="rounded bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">⚡ Disruption</span>
+                            )}
+                            {s.imported_from_csv && (
+                              <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">CSV</span>
+                            )}
+                          </div>
+                          <div className="mt-1.5 flex flex-wrap gap-1.5">
+                            <span className="inline-flex items-center gap-0.5 rounded bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
+                              <span className="material-symbols-outlined text-[11px]">location_on</span>{s.country || "—"}
+                            </span>
+                            <span className={`rounded px-2 py-0.5 text-[10px] font-bold ${riskColor(s.composite_risk_score)}`}>
+                              Risk {Math.round(s.composite_risk_score)}%
+                            </span>
+                            {s.gmp_status && <span className="rounded bg-green-50 px-2 py-0.5 text-[10px] font-bold text-green-700">GMP ✓</span>}
+                            {s.fda_approved && <span className="rounded bg-green-50 px-2 py-0.5 text-[10px] font-bold text-green-700">FDA ✓</span>}
+                            {s.cold_chain_capable && <span className="rounded bg-cyan-50 px-2 py-0.5 text-[10px] font-bold text-cyan-700">Cold Chain</span>}
+                            {s.is_sole_source && <span className="rounded bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-700">Sole Source</span>}
+                            {s.compliance_violation_flag && <span className="rounded bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">Violation Flag</span>}
+                          </div>
+                          <div className="mt-2 grid grid-cols-3 gap-x-6 gap-y-1 text-[11px] sm:grid-cols-6">
+                            <CatalogDetail label="Region" value={s.region} />
+                            <CatalogDetail label="Capacity" value={s.production_capacity?.toLocaleString()} />
+                            <CatalogDetail label="Lead Time" value={`${s.avg_lead_time_days}d`} />
+                            <CatalogDetail label="Contract" value={`${s.contract_duration_months}mo`} />
+                            <CatalogDetail label="Financial" value={`${s.financial_health_score}%`} />
+                            <CatalogDetail label="Dependency" value={`${s.dependency_pct}%`} />
+                            <CatalogDetail label="Alternates" value={s.num_approved_alternates} />
+                            <CatalogDetail label="Country Risk" value={`${s.country_risk_level}%`} />
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex shrink-0 gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                          <button
+                            type="button"
+                            className="rounded-lg p-1.5 text-slate-400 hover:bg-[#a390f9]/10 hover:text-[#6f59d9]"
+                            onClick={() => openEditSupplier(s)}
+                            title="Edit"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">edit</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                            onClick={() => handleDeleteSupplier(s._id)}
+                            title="Delete"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">delete</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Pagination */}
+                {supplierTotal > 50 && (
+                  <div className="flex items-center justify-between border-t border-slate-100 px-6 py-3">
+                    <p className="text-xs text-slate-400">Showing {Math.min(supplierPage * 50, supplierTotal)} of {supplierTotal}</p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={supplierPage <= 1}
+                        onClick={() => { const p = supplierPage - 1; setSupplierPage(p); loadSuppliers(p); }}
+                        className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                      >← Prev</button>
+                      <button
+                        type="button"
+                        disabled={supplierPage * 50 >= supplierTotal}
+                        onClick={() => { const p = supplierPage + 1; setSupplierPage(p); loadSuppliers(p); }}
+                        className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                      >Next →</button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Edit / Create Modal ────────────────────────────────────────────── */}
@@ -674,6 +1013,70 @@ function DataManagementPage() {
                   className="rounded-xl bg-[#b1b2ff] px-5 py-2.5 text-xs font-bold text-white hover:bg-[#9798f0] disabled:opacity-60"
                 >
                   {saving ? "Saving…" : editingItem.catalogId ? "Update Entity" : "Create Entity"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Supplier Edit / Create Modal ──────────────────────────────────── */}
+      {editingSupplier !== null && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={closeSupplierForm}>
+          <div className="relative flex max-h-[90vh] w-full max-w-2xl flex-col rounded-2xl border border-[#a390f9]/20 bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-[#a390f9]/10 px-6 py-4">
+              <h2 className="text-base font-bold text-slate-900">{editingSupplier._id ? "Edit Supplier" : "Create New Supplier"}</h2>
+              <button type="button" className="material-symbols-outlined text-slate-400 hover:text-slate-600" onClick={closeSupplierForm}>close</button>
+            </div>
+            <form className="flex-1 overflow-y-auto px-6 py-4" onSubmit={handleSupplierFormSubmit}>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {SUPPLIER_FIELDS.map((field) => (
+                  <label key={field.key} className={`block space-y-1 ${field.span === 2 ? "sm:col-span-2" : ""}`}>
+                    <span className="text-[10px] font-bold uppercase text-slate-400">{field.label}</span>
+                    {field.type === "select" ? (
+                      <select
+                        className="w-full rounded-xl border border-[#a390f9]/10 bg-[#a390f9]/5 px-3 py-2.5 text-sm font-medium focus:border-[#a390f9] focus:ring-1 focus:ring-[#a390f9]"
+                        value={supplierFormState[field.key] ?? ""}
+                        onChange={(e) => handleSupplierFormChange(field.key, e.target.value, field.key === "tier" ? "number" : "text")}
+                        required={field.required}
+                      >
+                        {field.options.map((opt) => (
+                          <option key={opt} value={opt}>{field.optionLabels?.[opt] || opt}</option>
+                        ))}
+                      </select>
+                    ) : field.type === "checkbox" ? (
+                      <div className="flex items-center gap-2 pt-1">
+                        <input
+                          type="checkbox"
+                          className="h-5 w-5 rounded border-[#a390f9]/20 text-[#a390f9] focus:ring-[#a390f9]"
+                          checked={!!supplierFormState[field.key]}
+                          onChange={(e) => handleSupplierFormChange(field.key, e.target.checked, "checkbox")}
+                        />
+                        <span className="text-sm text-slate-600">{supplierFormState[field.key] ? "Yes" : "No"}</span>
+                      </div>
+                    ) : (
+                      <input
+                        className="w-full rounded-xl border border-[#a390f9]/10 bg-[#a390f9]/5 px-3 py-2.5 text-sm font-medium focus:border-[#a390f9] focus:ring-1 focus:ring-[#a390f9]"
+                        type={field.type}
+                        value={supplierFormState[field.key] ?? ""}
+                        onChange={(e) => handleSupplierFormChange(field.key, e.target.value, field.type)}
+                        required={field.required}
+                        readOnly={field.key === "supplier_id" && !!editingSupplier._id}
+                      />
+                    )}
+                  </label>
+                ))}
+              </div>
+              <div className="mt-6 flex justify-end gap-3">
+                <button type="button" className="rounded-xl border border-slate-200 px-5 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50" onClick={closeSupplierForm}>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingSupplier}
+                  className="rounded-xl bg-[#a390f9] px-5 py-2.5 text-xs font-bold text-white hover:bg-[#8f79f7] disabled:opacity-60"
+                >
+                  {savingSupplier ? "Saving…" : editingSupplier._id ? "Update Supplier" : "Create Supplier"}
                 </button>
               </div>
             </form>

@@ -1,15 +1,40 @@
 import { NODE_META, NODE_TYPES } from "../constants/nodeMeta";
 
-function NodeSidebar() {
+function NodeSidebar({ open = true, onToggle }) {
   const onDragStart = (event, nodeType) => {
     event.dataTransfer.setData("application/reactflow", nodeType);
     event.dataTransfer.effectAllowed = "move";
   };
 
+  if (!open) {
+    return (
+      <div className="flex w-8 flex-col items-center border-r border-[#a390f9]/10 bg-white pt-4">
+        <button
+          type="button"
+          onClick={onToggle}
+          title="Show Node Library"
+          className="rounded-lg p-1.5 text-slate-400 hover:bg-[#a390f9]/10 hover:text-[#a390f9]"
+        >
+          <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <aside className="hidden w-72 flex-col gap-6 overflow-y-auto border-r border-[#b1b2ff]/10 bg-white p-6 xl:flex">
+    <aside className="flex w-72 flex-col gap-6 overflow-y-auto border-r border-[#a390f9]/10 bg-white p-6">
       <div>
-        <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-slate-400">Node Library</h3>
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">Node Library</h3>
+          <button
+            type="button"
+            onClick={onToggle}
+            title="Collapse Node Library"
+            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+          >
+            <span className="material-symbols-outlined text-[16px]">chevron_left</span>
+          </button>
+        </div>
 
         <div className="flex flex-col gap-3">
           {NODE_TYPES.map((type) => {
