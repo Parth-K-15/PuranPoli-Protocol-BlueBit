@@ -1,7 +1,9 @@
 const { StatusCodes } = require("http-status-codes");
+const mongoose = require("mongoose");
 
 const { Node, NODE_TYPES } = require("../models/Node");
 const Edge = require("../models/Edge");
+const Workspace = require("../models/Workspace");
 const { demoNodes, demoEdges } = require("../data/demoGraph");
 
 const toReactFlowNode = (nodeDoc) => ({
@@ -39,10 +41,33 @@ const toReactFlowEdge = (edgeDoc) => ({
   markerEnd: { type: "arrowclosed" },
 });
 
+// Helper: resolve workspace from query param ?workspace=<id>
+const resolveWorkspace = (req) => {
+  const wsId = req.query.workspace;
+  if (!wsId || !mongoose.Types.ObjectId.isValid(wsId)) return null;
+  return wsId;
+};
+
+const syncWorkspaceCounts = async (workspaceId) => {
+  if (!workspaceId || !mongoose.Types.ObjectId.isValid(workspaceId)) {
+    return;
+  }
+
+  const [nodeCount, edgeCount] = await Promise.all([
+    Node.countDocuments({ workspace: workspaceId }),
+    Edge.countDocuments({ workspace: workspaceId }),
+  ]);
+
+  await Workspace.findByIdAndUpdate(workspaceId, { nodeCount, edgeCount });
+};
+
 const getGraph = async (req, res) => {
+  const wsId = resolveWorkspace(req);
+  const filter = wsId ? { workspace: wsId } : {};
+
   const [nodes, edges] = await Promise.all([
-    Node.find({}).lean(),
-    Edge.find({}).lean(),
+    Node.find(filter).lean(),
+    Edge.find(filter).lean(),
   ]);
 
   res.status(StatusCodes.OK).json({
@@ -67,6 +92,7 @@ const createNode = async (req, res) => {
     dependency_percentage,
     compliance_status,
     position,
+    workspace,
   } = req.body;
 
   if (!id || !name || !type) {
@@ -83,8 +109,16 @@ const createNode = async (req, res) => {
     });
   }
 
+  if (!workspace || !mongoose.Types.ObjectId.isValid(workspace)) {
+    return res.status(StatusCodes.BAD_REQUEST).json({
+      success: false,
+      message: "A valid workspace id is required",
+    });
+  }
+
   const node = await Node.create({
     id,
+    workspace,
     name,
     type,
     country,
@@ -99,6 +133,8 @@ const createNode = async (req, res) => {
     position,
   });
 
+  await syncWorkspaceCounts(workspace);
+
   res.status(StatusCodes.CREATED).json({
     success: true,
     node: toReactFlowNode(node),
@@ -107,7 +143,9 @@ const createNode = async (req, res) => {
 
 const updateNode = async (req, res) => {
   const { id } = req.params;
-  const payload = req.body;
+  const payload = { ...req.body };
+  // Prevent changing workspace via update
+  delete payload.workspace;
 
   if (payload.type && !NODE_TYPES.includes(payload.type)) {
     return res.status(StatusCodes.BAD_REQUEST).json({
@@ -146,7 +184,12 @@ const deleteNode = async (req, res) => {
     });
   }
 
-  await Edge.deleteMany({ $or: [{ source_node: id }, { target_node: id }] });
+  await Edge.deleteMany({
+    workspace: node.workspace,
+    $or: [{ source_node: id }, { target_node: id }],
+  });
+
+  await syncWorkspaceCounts(node.workspace);
 
   res.status(StatusCodes.OK).json({
     success: true,
@@ -164,6 +207,7 @@ const createEdge = async (req, res) => {
     dependency_percent,
     transport_mode,
     risk_score,
+    workspace,
   } = req.body;
 
   if (!edge_id || !source_node || !target_node) {
@@ -173,20 +217,28 @@ const createEdge = async (req, res) => {
     });
   }
 
+  if (!workspace || !mongoose.Types.ObjectId.isValid(workspace)) {
+    return res.status(StatusCodes.BAD_REQUEST).json({
+      success: false,
+      message: "A valid workspace id is required",
+    });
+  }
+
   const [sourceExists, targetExists] = await Promise.all([
-    Node.exists({ id: source_node }),
-    Node.exists({ id: target_node }),
+    Node.exists({ id: source_node, workspace }),
+    Node.exists({ id: target_node, workspace }),
   ]);
 
   if (!sourceExists || !targetExists) {
     return res.status(StatusCodes.BAD_REQUEST).json({
       success: false,
-      message: "Source or target node does not exist",
+      message: "Source or target node does not exist in this workspace",
     });
   }
 
   const edge = await Edge.create({
     edge_id,
+    workspace,
     source_node,
     target_node,
     material,
@@ -195,6 +247,8 @@ const createEdge = async (req, res) => {
     transport_mode,
     risk_score,
   });
+
+  await syncWorkspaceCounts(workspace);
 
   res.status(StatusCodes.CREATED).json({
     success: true,
@@ -214,6 +268,8 @@ const deleteEdge = async (req, res) => {
     });
   }
 
+  await syncWorkspaceCounts(edge.workspace);
+
   res.status(StatusCodes.OK).json({
     success: true,
     message: `Edge ${id} deleted`,
@@ -221,20 +277,57 @@ const deleteEdge = async (req, res) => {
 };
 
 const loadDemo = async (req, res) => {
-  await Promise.all([Node.deleteMany({}), Edge.deleteMany({})]);
-  await Node.insertMany(demoNodes);
-  await Edge.insertMany(demoEdges);
+  const wsId = resolveWorkspace(req);
+
+  // If workspace provided, clear only that workspace; else create a "Demo" workspace
+  let targetWs;
+  if (wsId) {
+    targetWs = wsId;
+    await Promise.all([
+      Node.deleteMany({ workspace: wsId }),
+      Edge.deleteMany({ workspace: wsId }),
+    ]);
+  } else {
+    const ws = await Workspace.create({ name: "Demo Workspace" });
+    targetWs = ws._id;
+  }
+
+  const taggedNodes = demoNodes.map((n) => ({ ...n, workspace: targetWs }));
+  const taggedEdges = demoEdges.map((e) => ({ ...e, workspace: targetWs }));
+
+  await Node.insertMany(taggedNodes);
+  await Edge.insertMany(taggedEdges);
+  await syncWorkspaceCounts(targetWs);
 
   const [nodes, edges] = await Promise.all([
-    Node.find({}).lean(),
-    Edge.find({}).lean(),
+    Node.find({ workspace: targetWs }).lean(),
+    Edge.find({ workspace: targetWs }).lean(),
   ]);
 
   res.status(StatusCodes.OK).json({
     success: true,
     message: "Demo graph loaded",
+    workspace: targetWs,
     nodes: nodes.map(toReactFlowNode),
     edges: edges.map(toReactFlowEdge),
+  });
+};
+
+const resetGraph = async (req, res) => {
+  const wsId = resolveWorkspace(req);
+  const filter = wsId ? { workspace: wsId } : {};
+
+  await Promise.all([Node.deleteMany(filter), Edge.deleteMany(filter)]);
+
+  if (wsId) {
+    await syncWorkspaceCounts(wsId);
+  }
+
+  res.status(StatusCodes.OK).json({
+    success: true,
+    message: "Workspace reset to empty graph",
+    nodes: [],
+    edges: [],
   });
 };
 
@@ -246,4 +339,5 @@ module.exports = {
   createEdge,
   deleteEdge,
   loadDemo,
+  resetGraph,
 };
