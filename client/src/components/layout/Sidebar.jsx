@@ -8,6 +8,7 @@ const navItems = [
   { to: "/app/simulation", icon: "science", label: "Simulation" },
   { to: "/app/reports", icon: "summarize", label: "Reports" },
   { to: "/app/data", icon: "database", label: "Data Management" },
+  { to: "/app/heatmap", icon: "map", label: "Heatmap" },
 ];
 
 const bottomItems = [
