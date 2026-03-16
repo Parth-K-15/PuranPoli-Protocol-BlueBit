@@ -199,4 +199,16 @@ export const analyticsApi = {
   },
 };
 
+// ── Simulation API ──────────────────────────────────────────────────────────
+export const simulationApi = {
+  run: async (payload) => {
+    const { data } = await api.post("/simulation/run", payload);
+    return data;
+  },
+  compare: async (payload) => {
+    const { data } = await api.post("/simulation/compare", payload);
+    return data;
+  },
+};
+
 export default api;

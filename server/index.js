@@ -1,3 +1,4 @@
+// Simulation module added
 require("dotenv").config();
 require("express-async-errors");
 
@@ -17,6 +18,7 @@ const disruptionRoutes = require("./src/external-intelligence/api/disruptionRout
 const locationRoutes = require("./src/routes/locationRoutes");
 const catalogRoutes = require("./src/routes/catalogRoutes");
 const supplierRoutes = require("./src/routes/supplierRoutes");
+const simulationRoutes = require("./src/routes/simulationRoutes");
 const MonitoredLocation = require("./src/models/monitoredLocation");
 const { startScheduler } = require("./src/external-intelligence/scheduler/ingestionScheduler");
 
@@ -41,6 +43,7 @@ app.use("/api/v1/disruptions", disruptionRoutes);
 app.use("/api/v1/locations", locationRoutes);
 app.use("/api/v1", catalogRoutes);
 app.use("/api/v1/suppliers", supplierRoutes);
+app.use("/api/v1/simulation", simulationRoutes);
 
 // ── Error Handling ────────────────────────────────────────────────────────────
 app.use(notFound);

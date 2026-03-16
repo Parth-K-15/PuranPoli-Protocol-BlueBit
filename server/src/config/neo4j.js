@@ -8,12 +8,18 @@ const connectNeo4j = async () => {
     neo4j.auth.basic(process.env.NEO4J_USERNAME, process.env.NEO4J_PASSWORD)
   );
 
-  await driver.verifyConnectivity();
-  console.log(`Neo4j connected: ${process.env.NEO4J_URI}`);
+  try {
+    await driver.verifyConnectivity();
+    console.log(`Neo4j connected: ${process.env.NEO4J_URI}`);
+  } catch (err) {
+    console.warn(`Neo4j connection failed (graph features unavailable): ${err.message}`);
+    await driver.close();
+    driver = null;
+  }
 };
 
 const getDriver = () => {
-  if (!driver) throw new Error("Neo4j driver not initialised. Call connectNeo4j() first.");
+  if (!driver) throw new Error("Neo4j is unavailable. Check your Aura instance or network.");
   return driver;
 };
 
