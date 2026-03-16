@@ -1,0 +1,127 @@
+📘 MODULE 5: Simulation & Scenario Lab
+1️⃣ Purpose
+To allow users to test:
+“What happens if…”
+Without real disruption occurring.
+This is your strategic planning module.
+2️⃣ Target Users
+Supply Chain Director
+
+
+Risk Officer
+
+
+Executive leadership
+3️⃣ Core Capabilities
+A. What-If Simulation
+User can simulate:
+Supplier shutdown
+
+
+Port congestion increase
+
+
+Country trade ban
+
+
+Demand spike
+
+
+Plant capacity drop
+
+
+System then:
+Recalculates risk
+
+
+Shows impacted nodes
+
+
+Estimates lead time increase
+
+
+Estimates cost increase
+
+
+B. Cascading Impact Visualization
+If Tier-2 fails:
+Highlight:
+Tier-1 impact
+
+
+Plant impact
+
+
+SKU impact
+
+
+Warehouse impact
+
+
+Graph dynamically updates.
+
+Instead of just showing alerts, simulate:
+“What happens if this disruption lasts 10 days?”
+Example:
+Event: Port congestion
+Duration: 12 days
+System calculates:
+Shipment delay: +9 days
+Inventory coverage: 7 days
+Result: Plant shutdown risk
+Revenue impact: $2.3M
+
+C. Financial Impact Estimation (Simplified)
+User inputs:
+Revenue per SKU per day
+
+
+System estimates:
+ Revenue Loss = Days of disruption × daily revenue
+This makes it business-relevant.
+D. Branch Comparison
+User selects:
+Current route
+
+
+Alternative route
+
+
+System compares:
+Risk under disruption
+
+
+Cost difference
+
+
+Delay impact
+
+
+Graphical comparison chart.
+4️⃣ Example Scenario
+“What if Taiwan API stops for 30 days?”
+System shows:
+Affected plants
+
+
+SKUs impacted
+
+
+Inventory coverage days
+
+
+Revenue at risk
+
+
+Suggested mitigation
+5️⃣ Success Criteria
+User can simulate failure in 1 click
+
+
+Graph updates dynamically
+
+
+Financial impact visible
+
+
+Comparison view intuitive

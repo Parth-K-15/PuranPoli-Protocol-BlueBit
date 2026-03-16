@@ -272,19 +272,16 @@ function SimulationPage() {
 
   return (
     <div className="flex flex-col gap-8 p-8">
-      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Scenario Simulation</h1>
         <p className="text-sm text-slate-500">Model disruptions and forecast cascading impacts</p>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Scenario builder */}
         <div className="lg:col-span-1">
           <div className="rounded-2xl border border-[#b1b2ff]/10 bg-white p-6 shadow-sm">
             <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-slate-400">Build Scenario</h3>
 
-            {/* Disruption type */}
             <p className="mb-2 text-[10px] font-bold uppercase text-slate-400">Disruption Type</p>
             <div className="mb-5 grid grid-cols-2 gap-2">
               {DISRUPTION_TYPES.map((d) => (
@@ -304,7 +301,6 @@ function SimulationPage() {
               ))}
             </div>
 
-            {/* Target node */}
             <label className="mb-5 block">
               <span className="text-[10px] font-bold uppercase text-slate-400">Target Node</span>
               <select
@@ -319,7 +315,6 @@ function SimulationPage() {
               </select>
             </label>
 
-            {/* Severity */}
             <div className="mb-5 block">
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-[10px] font-bold uppercase text-slate-400">Severity by Disruption</span>
@@ -352,7 +347,6 @@ function SimulationPage() {
               )}
             </div>
 
-            {/* Duration */}
             <label className="mb-6 block">
               <span className="text-[10px] font-bold uppercase text-slate-400">Duration (days)</span>
               <input
@@ -383,7 +377,6 @@ function SimulationPage() {
           </div>
         </div>
 
-        {/* Results */}
         <div className="lg:col-span-2">
           {simError && (
             <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -410,7 +403,6 @@ function SimulationPage() {
 
           {simResult && (
             <div className="flex flex-col gap-6">
-              {/* Impact summary */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div className="rounded-2xl border border-[#b1b2ff]/10 bg-white p-5 shadow-sm">
                   <p className="text-[10px] font-bold uppercase text-slate-400">Nodes Impacted</p>
@@ -433,7 +425,6 @@ function SimulationPage() {
                 </div>
               </div>
 
-              {/* Scenario detail */}
               <div className="rounded-2xl border border-[#b1b2ff]/10 bg-white p-6 shadow-sm">
                 <div className="mb-4 flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-50 text-red-600">
@@ -473,7 +464,6 @@ function SimulationPage() {
                 </div>
               </div>
 
-              {/* Timeline + Ripple view */}
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <div className="rounded-2xl border border-[#b1b2ff]/10 bg-white p-6 shadow-sm">
                   <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-slate-400">Impact Timeline</h3>
@@ -521,7 +511,6 @@ function SimulationPage() {
                 </div>
               </div>
 
-              {/* Cascading impact table */}
               <div className="rounded-2xl border border-[#b1b2ff]/10 bg-white p-6 shadow-sm">
                 <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-slate-400">
                   Cascading Impact ({simResult.affectedNodes.length} most affected)
