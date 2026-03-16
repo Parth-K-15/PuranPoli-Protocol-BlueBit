@@ -336,7 +336,10 @@ function SimulationPage() {
 
           {/* Severity */}
           <label className="mb-5 block">
-            <span className="text-[10px] font-bold uppercase text-slate-400">Severity (%)</span>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase text-slate-400">Severity</span>
+              <span className="text-xs font-bold text-[#b1b2ff]">{severity}%</span>
+            </div>
             <input
               type="range"
               min="10"

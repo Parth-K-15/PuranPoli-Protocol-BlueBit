@@ -50,6 +50,15 @@ const edgeSchema = new mongoose.Schema(
       min: 0,
       max: 100,
     },
+    // ── Import tracking ─────────────────────────────────────
+    imported: {
+      type: Boolean,
+      default: false,
+    },
+    originalEdgeId: {
+      type: String,
+      default: null,
+    },
   },
   { timestamps: true }
 );

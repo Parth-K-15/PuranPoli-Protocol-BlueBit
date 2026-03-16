@@ -34,6 +34,34 @@ export const workspaceApi = {
     const { data } = await api.delete(`/workspaces/${id}`);
     return data;
   },
+  importChain: async (targetWsId, payload) => {
+    const { data } = await api.post(`/workspaces/${targetWsId}/import`, payload);
+    return data;
+  },
+  viewSupplierNetwork: async (targetWsId, payload) => {
+    const { data } = await api.post(`/workspaces/${targetWsId}/supplier-network/view`, payload);
+    return data;
+  },
+  collapseSupplierNetwork: async (targetWsId, payload) => {
+    const { data } = await api.post(`/workspaces/${targetWsId}/supplier-network/collapse`, payload);
+    return data;
+  },
+};
+
+// ── Marketplace API ─────────────────────────────────────────────────────────
+export const marketplaceApi = {
+  list: async (params = {}) => {
+    const { data } = await api.get("/marketplace", { params });
+    return data;
+  },
+  get: async (id) => {
+    const { data } = await api.get(`/marketplace/${id}`);
+    return data;
+  },
+  preview: async (id) => {
+    const { data } = await api.get(`/marketplace/${id}/preview`);
+    return data;
+  },
 };
 
 // ── Graph API (workspace-scoped) ────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { graphApi } from "../services/api";
+import { graphApi, workspaceApi } from "../services/api";
 
 const severityLabel = (score) => {
   if (score >= 80) return { text: "Critical", cls: "bg-red-100 text-red-700" };
@@ -40,10 +40,24 @@ const fields = [
   { key: "financial_health_score", label: "Financial Health (0-100)", type: "number" },
 ];
 
-function NodeDetailsPanel({ node, onClose, onSave, onDelete, isSaving }) {
+function NodeDetailsPanel({
+  node,
+  onClose,
+  onSave,
+  onDelete,
+  isSaving,
+  workspaceId,
+  onNetworkChange,
+}) {
   const [formState, setFormState] = useState(node?.data || {});
   const [intel, setIntel] = useState(null);
   const [loadingIntel, setLoadingIntel] = useState(false);
+  const [networkBusy, setNetworkBusy] = useState(false);
+  const [networkExpanded, setNetworkExpanded] = useState(false);
+  const linkedWorkspaceId =
+    formState.linkedWorkspace || node?.data?.linkedWorkspace || null;
+  const anchorNodeId = node?.id || null;
+  const canToggleNetwork = Boolean(workspaceId && linkedWorkspaceId && anchorNodeId);
 
   useEffect(() => {
     if (!node?.data?.id) return;
@@ -54,6 +68,52 @@ function NodeDetailsPanel({ node, onClose, onSave, onDelete, isSaving }) {
       .catch(() => setIntel(null))
       .finally(() => setLoadingIntel(false));
   }, [node?.data?.id]);
+
+  useEffect(() => {
+    if (!canToggleNetwork) {
+      setNetworkExpanded(false);
+      return;
+    }
+
+    let active = true;
+
+    const syncExpandedState = async () => {
+      try {
+        const graph = await graphApi.getGraph(workspaceId);
+        const graphNodes = graph?.nodes || [];
+        const graphEdges = graph?.edges || [];
+
+        const importedNodeIds = new Set(
+          graphNodes
+            .filter((graphNode) => {
+              const isImported = Boolean(graphNode?.data?.imported);
+              const sourceWorkspace = String(graphNode?.data?.sourceWorkspace || "");
+              return isImported && sourceWorkspace === String(linkedWorkspaceId);
+            })
+            .map((graphNode) => graphNode.id)
+        );
+
+        const expanded = graphEdges.some(
+          (graphEdge) =>
+            graphEdge?.source === anchorNodeId && importedNodeIds.has(graphEdge?.target)
+        );
+
+        if (active) {
+          setNetworkExpanded(expanded);
+        }
+      } catch {
+        if (active) {
+          setNetworkExpanded(false);
+        }
+      }
+    };
+
+    syncExpandedState();
+
+    return () => {
+      active = false;
+    };
+  }, [canToggleNetwork, workspaceId, linkedWorkspaceId, anchorNodeId]);
 
   if (!node) {
     return null;
@@ -74,6 +134,38 @@ function NodeDetailsPanel({ node, onClose, onSave, onDelete, isSaving }) {
   const handleSubmit = (event) => {
     event.preventDefault();
     onSave(node.id, formState);
+  };
+
+  const handleToggleSupplierNetwork = async () => {
+    if (!canToggleNetwork) return;
+
+    setNetworkBusy(true);
+    try {
+      const collapseResult = await workspaceApi.collapseSupplierNetwork(workspaceId, {
+        anchorNodeId,
+        sourceWorkspaceId: linkedWorkspaceId,
+      });
+
+      if (collapseResult?.collapsed) {
+        setNetworkExpanded(false);
+        onNetworkChange?.();
+        return;
+      }
+
+      const viewResult = await workspaceApi.viewSupplierNetwork(workspaceId, {
+          anchorNodeId,
+          sourceWorkspaceId: linkedWorkspaceId,
+        });
+
+      if (viewResult?.success) {
+        setNetworkExpanded(true);
+        onNetworkChange?.();
+      }
+    } catch (error) {
+      window.alert(error?.response?.data?.message || "Supplier network action failed");
+    } finally {
+      setNetworkBusy(false);
+    }
   };
 
   const riskValue = Math.max(0, Math.min(100, Number(formState.risk_score || 0)));
@@ -456,6 +548,24 @@ function NodeDetailsPanel({ node, onClose, onSave, onDelete, isSaving }) {
             )}
           </label>
         ))}
+
+        {canToggleNetwork && (
+          <button
+            type="button"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#b1b2ff]/30 bg-[#b1b2ff]/10 py-2.5 text-xs font-bold text-[#4f52c9] transition-colors hover:bg-[#b1b2ff]/20 disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={handleToggleSupplierNetwork}
+            disabled={networkBusy}
+          >
+            <span className="material-symbols-outlined text-[16px]">
+              {networkExpanded ? "unfold_less" : "account_tree"}
+            </span>
+            {networkBusy
+              ? "Processing..."
+              : networkExpanded
+                ? "Collapse Network"
+                : "View Network"}
+          </button>
+        )}
 
         <div className="flex gap-3 pt-2">
           <button

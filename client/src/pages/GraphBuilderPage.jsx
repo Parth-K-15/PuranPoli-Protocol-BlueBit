@@ -298,6 +298,8 @@ function GraphBuilderPage() {
             onSave={handleSaveNode}
             onDelete={handleDeleteNode}
             isSaving={isSaving}
+            workspaceId={activeWorkspaceId}
+            onNetworkChange={() => setRefreshToken((prev) => prev + 1)}
           />
         </div>
       </div>

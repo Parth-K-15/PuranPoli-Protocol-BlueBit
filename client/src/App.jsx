@@ -13,6 +13,7 @@ import SettingsPage from "./pages/SettingsPage";
 import Disruptions from "./pages/Disruptions";
 import LiveIntelFeed from "./pages/LiveIntelFeed";
 import HeatmapPage from "./pages/HeatmapPage";
+import MarketplacePage from "./pages/MarketplacePage";
 
 const router = createBrowserRouter([
   {
@@ -25,6 +26,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <DashboardPage /> },
       { path: "graph", element: <GraphBuilderPage /> },
+      { path: "marketplace", element: <MarketplacePage /> },
       { path: "risk", element: <RiskAnalysisPage /> },
       { path: "simulation", element: <SimulationPage /> },
       { path: "reports", element: <ReportsPage /> },

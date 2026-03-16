@@ -1,5 +1,6 @@
 // Simulation module added
-require("dotenv").config();
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 require("express-async-errors");
 
 const express = require("express");
@@ -19,6 +20,8 @@ const locationRoutes = require("./src/routes/locationRoutes");
 const catalogRoutes = require("./src/routes/catalogRoutes");
 const supplierRoutes = require("./src/routes/supplierRoutes");
 const simulationRoutes = require("./src/routes/simulationRoutes");
+const authRoutes = require("./src/routes/authRoutes");
+const marketplaceRoutes = require("./src/routes/marketplaceRoutes");
 const MonitoredLocation = require("./src/models/monitoredLocation");
 const { startScheduler } = require("./src/external-intelligence/scheduler/ingestionScheduler");
 
@@ -44,6 +47,8 @@ app.use("/api/v1/locations", locationRoutes);
 app.use("/api/v1", catalogRoutes);
 app.use("/api/v1/suppliers", supplierRoutes);
 app.use("/api/v1/simulation", simulationRoutes);
+app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/marketplace", marketplaceRoutes);
 
 // ── Error Handling ────────────────────────────────────────────────────────────
 app.use(notFound);

@@ -74,6 +74,11 @@ function CustomNode({ data, selected }) {
         <span className="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
           {data.country || "Unassigned"}
         </span>
+        {data.imported && (
+          <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+            Imported
+          </span>
+        )}
         {data.risk_probability && data.risk_probability !== "Low" && (
           <span
             className={`rounded px-2 py-0.5 text-[10px] font-bold ${
