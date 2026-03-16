@@ -1,0 +1,167 @@
+{
+  "product": "Amoxicillin",
+  "forecast_week": "2024-W03",
+  "generated_at": "2026-03-15T20:10:02.746497Z",
+  "cities": [
+    {
+      "city": "Mumbai",
+      "lat": 19.076,
+      "lng": 72.8777,
+      "predicted_units": 1889,
+      "demand_index": 1.0,
+      "demand_level": "high"
+    },
+    {
+      "city": "Pune",
+      "lat": 18.5204,
+      "lng": 73.8567,
+      "predicted_units": 1454,
+      "demand_index": 0.7605,
+      "demand_level": "high"
+    },
+    {
+      "city": "Nagpur",
+      "lat": 21.1458,
+      "lng": 79.0882,
+      "predicted_units": 600,
+      "demand_index": 0.2902,
+      "demand_level": "low"
+    },
+    {
+      "city": "Thane",
+      "lat": 19.2183,
+      "lng": 72.9781,
+      "predicted_units": 561,
+      "demand_index": 0.2687,
+      "demand_level": "low"
+    },
+    {
+      "city": "Aurangabad",
+      "lat": 19.8762,
+      "lng": 75.3433,
+      "predicted_units": 472,
+      "demand_index": 0.2197,
+      "demand_level": "low"
+    },
+    {
+      "city": "Nashik",
+      "lat": 19.9975,
+      "lng": 73.7898,
+      "predicted_units": 444,
+      "demand_index": 0.2043,
+      "demand_level": "low"
+    },
+    {
+      "city": "Solapur",
+      "lat": 17.6599,
+      "lng": 75.9064,
+      "predicted_units": 198,
+      "demand_index": 0.0688,
+      "demand_level": "low"
+    },
+    {
+      "city": "Kolhapur",
+      "lat": 16.705,
+      "lng": 74.2433,
+      "predicted_units": 170,
+      "demand_index": 0.0534,
+      "demand_level": "low"
+    },
+    {
+      "city": "Nanded",
+      "lat": 19.1383,
+      "lng": 77.321,
+      "predicted_units": 151,
+      "demand_index": 0.043,
+      "demand_level": "low"
+    },
+    {
+      "city": "Amravati",
+      "lat": 20.932,
+      "lng": 77.7523,
+      "predicted_units": 141,
+      "demand_index": 0.0374,
+      "demand_level": "low"
+    },
+    {
+      "city": "Jalgaon",
+      "lat": 21.0077,
+      "lng": 75.5626,
+      "predicted_units": 137,
+      "demand_index": 0.0352,
+      "demand_level": "low"
+    },
+    {
+      "city": "Ahmednagar",
+      "lat": 19.0948,
+      "lng": 74.748,
+      "predicted_units": 126,
+      "demand_index": 0.0292,
+      "demand_level": "low"
+    },
+    {
+      "city": "Akola",
+      "lat": 20.7002,
+      "lng": 77.0082,
+      "predicted_units": 119,
+      "demand_index": 0.0253,
+      "demand_level": "low"
+    },
+    {
+      "city": "Sangli",
+      "lat": 16.8524,
+      "lng": 74.5815,
+      "predicted_units": 119,
+      "demand_index": 0.0253,
+      "demand_level": "low"
+    },
+    {
+      "city": "Latur",
+      "lat": 18.3968,
+      "lng": 76.5604,
+      "predicted_units": 101,
+      "demand_index": 0.0154,
+      "demand_level": "low"
+    },
+    {
+      "city": "Chandrapur",
+      "lat": 19.9615,
+      "lng": 79.2961,
+      "predicted_units": 95,
+      "demand_index": 0.0121,
+      "demand_level": "low"
+    },
+    {
+      "city": "Dhule",
+      "lat": 20.9042,
+      "lng": 74.7749,
+      "predicted_units": 93,
+      "demand_index": 0.011,
+      "demand_level": "low"
+    },
+    {
+      "city": "Bid",
+      "lat": 18.989,
+      "lng": 75.7601,
+      "predicted_units": 83,
+      "demand_index": 0.0055,
+      "demand_level": "low"
+    },
+    {
+      "city": "Ichalkaranji",
+      "lat": 16.6903,
+      "lng": 74.4601,
+      "predicted_units": 83,
+      "demand_index": 0.0055,
+      "demand_level": "low"
+    },
+    {
+      "city": "Parbhani",
+      "lat": 19.261,
+      "lng": 76.7748,
+      "predicted_units": 73,
+      "demand_index": 0.0,
+      "demand_level": "low"
+    }
+  ]
+}

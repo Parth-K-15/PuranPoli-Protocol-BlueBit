@@ -5,7 +5,8 @@ import {
   Geography,
   ZoomableGroup,
 } from "react-simple-maps";
-import { scaleQuantile } from "d3-scale";
+import { scaleLinear } from "d3-scale";
+import { analyticsApi } from "../services/api";
 
 /* ───────── Constants ───────── */
 const MAHARASHTRA_TOPO = "/maharashtra.topo.json";
@@ -86,6 +87,15 @@ const DISTRICTS = [
   { code: "515", name: "Aurangabad" },
   { code: "520", name: "Raigad" },
 ];
+
+/* ───────── Demand Forecast Constants ───────── */
+const PRODUCT_LIST = [
+  "Paracetamol", "Azithromycin", "ORS Sachets", "Cetirizine",
+  "Metformin", "Insulin Glargine", "Omeprazole", "Amoxicillin",
+  "Vitamin D3", "Ibuprofen",
+];
+
+const WEEKS_OPTIONS = [1, 2, 4, 8, 12];
 
 /* ───────── Mock data generator ───────── */
 const rand = (min, max) => Math.round(min + Math.random() * (max - min));
@@ -184,12 +194,17 @@ function StatsCard({ icon, label, value, trend, color }) {
   );
 }
 
-function DistrictDetailPanel({ district, data, onClose, paramKey }) {
+function DistrictDetailPanel({ district, data, onClose, paramKey, isDemandMode }) {
   if (!district || !data) return null;
   const param = SUPPLY_CHAIN_PARAMS.find((p) => p.key === paramKey);
 
   return (
-    <div className="animate-slideIn absolute right-4 top-4 z-20 w-80 overflow-hidden rounded-2xl border border-slate-100 bg-white/95 shadow-2xl backdrop-blur-xl">
+    <div
+      className="animate-slideIn absolute right-4 top-4 z-20 w-80 overflow-hidden rounded-2xl border border-slate-100 bg-white/95 shadow-2xl backdrop-blur-xl"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
       {/* Header */}
       <div className="relative overflow-hidden bg-gradient-to-r from-teal-500 to-emerald-500 px-5 py-4">
         <div className="absolute -right-6 -top-6 h-20 w-20 rounded-full bg-white/10" />
@@ -208,62 +223,130 @@ function DistrictDetailPanel({ district, data, onClose, paramKey }) {
         </div>
       </div>
 
-      {/* Highlighted param */}
-      <div className="border-b border-slate-100 px-5 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-[18px] text-teal-500">{param?.icon}</span>
-            <span className="text-xs font-semibold text-slate-600">{param?.label}</span>
-          </div>
-          <span className="text-xl font-black text-slate-800">
-            {data[paramKey]}{param?.unit && <span className="text-xs font-medium text-slate-400 ml-1">{param.unit}</span>}
-          </span>
-        </div>
-      </div>
-
-      {/* All metrics */}
-      <div className="space-y-3 px-5 py-4">
-        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">All Metrics</p>
-        {SUPPLY_CHAIN_PARAMS.filter((p) => p.key !== paramKey).map((p) => (
-          <div key={p.key} className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-[14px] text-slate-400">
-                {p.icon}
+      {/* Demand forecast detail */}
+      {isDemandMode && data._hasForecast ? (
+        <>
+          <div className="border-b border-slate-100 px-5 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-teal-500">trending_up</span>
+                <span className="text-xs font-semibold text-slate-600">Predicted Demand</span>
+              </div>
+              <span className="text-xl font-black text-slate-800">
+                {data.predicted_units} <span className="text-xs font-medium text-slate-400">units</span>
               </span>
-              <span className="text-xs text-slate-500">{p.label}</span>
             </div>
-            <span className="text-xs font-bold text-slate-700">
-              {data[p.key]} {p.unit}
-            </span>
           </div>
-        ))}
-      </div>
+          <div className="space-y-3 px-5 py-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-slate-500">Demand Index</span>
+              <span className="text-xs font-bold text-slate-700">{data.demand_index !== null ? (data.demand_index * 100).toFixed(1) + "%" : "—"}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-slate-500">Demand Level</span>
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                data.demand_level === "high" ? "bg-rose-50 text-rose-600" :
+                data.demand_level === "medium" ? "bg-amber-50 text-amber-600" :
+                "bg-emerald-50 text-emerald-600"
+              }`}>{data.demand_level}</span>
+            </div>
+            {data.city && (
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-500">Forecast City</span>
+                <span className="text-xs font-bold text-slate-700">{data.city}</span>
+              </div>
+            )}
+          </div>
+          {/* Demand bar */}
+          <div className="border-t border-slate-100 px-5 py-4">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Demand Intensity</span>
+              <span className={`text-xs font-bold ${
+                data.demand_level === "high" ? "text-rose-500" :
+                data.demand_level === "medium" ? "text-amber-500" :
+                "text-emerald-500"
+              }`}>{data.demand_level === "high" ? "High" : data.demand_level === "medium" ? "Moderate" : "Low"}</span>
+            </div>
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-2 rounded-full transition-all duration-700"
+                style={{
+                  width: `${(data.demand_index || 0) * 100}%`,
+                  background: data.demand_level === "high"
+                    ? "linear-gradient(90deg, #ef4444, #f87171)"
+                    : data.demand_level === "medium"
+                    ? "linear-gradient(90deg, #f59e0b, #fbbf24)"
+                    : "linear-gradient(90deg, #10b981, #34d399)",
+                }}
+              />
+            </div>
+          </div>
+        </>
+      ) : isDemandMode && !data._hasForecast ? (
+        <div className="px-5 py-8 text-center">
+          <span className="material-symbols-outlined text-[32px] text-slate-300">info</span>
+          <p className="mt-2 text-xs text-slate-400">No forecast data available for this district</p>
+        </div>
+      ) : (
+        <>
+          {/* Highlighted param */}
+          <div className="border-b border-slate-100 px-5 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-teal-500">{param?.icon}</span>
+                <span className="text-xs font-semibold text-slate-600">{param?.label}</span>
+              </div>
+              <span className="text-xl font-black text-slate-800">
+                {data[paramKey]}{param?.unit && <span className="text-xs font-medium text-slate-400 ml-1">{param.unit}</span>}
+              </span>
+            </div>
+          </div>
 
-      {/* Supply chain health bar */}
-      <div className="border-t border-slate-100 px-5 py-4">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-            Supply Chain Health
-          </span>
-          <span className={`text-xs font-bold ${data.fulfillment > 70 ? "text-emerald-500" : data.fulfillment > 50 ? "text-amber-500" : "text-rose-500"}`}>
-            {data.fulfillment > 70 ? "Healthy" : data.fulfillment > 50 ? "Moderate" : "Critical"}
-          </span>
-        </div>
-        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-          <div
-            className="h-2 rounded-full transition-all duration-700"
-            style={{
-              width: `${data.fulfillment}%`,
-              background:
-                data.fulfillment > 70
-                  ? "linear-gradient(90deg, #10b981, #34d399)"
-                  : data.fulfillment > 50
-                  ? "linear-gradient(90deg, #f59e0b, #fbbf24)"
-                  : "linear-gradient(90deg, #ef4444, #f87171)",
-            }}
-          />
-        </div>
-      </div>
+          {/* All metrics */}
+          <div className="space-y-3 px-5 py-4">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">All Metrics</p>
+            {SUPPLY_CHAIN_PARAMS.filter((p) => p.key !== paramKey).map((p) => (
+              <div key={p.key} className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[14px] text-slate-400">
+                    {p.icon}
+                  </span>
+                  <span className="text-xs text-slate-500">{p.label}</span>
+                </div>
+                <span className="text-xs font-bold text-slate-700">
+                  {data[p.key]} {p.unit}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Supply chain health bar */}
+          <div className="border-t border-slate-100 px-5 py-4">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                Supply Chain Health
+              </span>
+              <span className={`text-xs font-bold ${data.fulfillment > 70 ? "text-emerald-500" : data.fulfillment > 50 ? "text-amber-500" : "text-rose-500"}`}>
+                {data.fulfillment > 70 ? "Healthy" : data.fulfillment > 50 ? "Moderate" : "Critical"}
+              </span>
+            </div>
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-2 rounded-full transition-all duration-700"
+                style={{
+                  width: `${data.fulfillment}%`,
+                  background:
+                    data.fulfillment > 70
+                      ? "linear-gradient(90deg, #10b981, #34d399)"
+                      : data.fulfillment > 50
+                      ? "linear-gradient(90deg, #f59e0b, #fbbf24)"
+                      : "linear-gradient(90deg, #ef4444, #f87171)",
+                }}
+              />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -279,7 +362,19 @@ export default function HeatmapPage() {
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [zoom, setZoom] = useState(1);
 
-  // Simulated live update
+  // Demand forecast state
+  const [selectedProduct, setSelectedProduct] = useState("Paracetamol");
+  const [weeksAhead, setWeeksAhead] = useState(1);
+  const [forecastData, setForecastData] = useState(null);
+  const [forecastLoading, setForecastLoading] = useState(false);
+  const [forecastError, setForecastError] = useState(null);
+
+  // Disable live mode when switching to demand
+  useEffect(() => {
+    if (activeParam === "demand") setIsLive(false);
+  }, [activeParam]);
+
+  // Simulated live update (non-demand params only)
   useEffect(() => {
     if (!isLive) return;
     const interval = setInterval(() => {
@@ -289,29 +384,132 @@ export default function HeatmapPage() {
     return () => clearInterval(interval);
   }, [isLive]);
 
-  const colorRange = COLOR_RANGES[activeParam];
-  const values = Object.values(districtData).map((d) => d[activeParam]);
-  const minVal = Math.min(...values);
-  const maxVal = Math.max(...values);
+  // Fetch demand forecast
+  useEffect(() => {
+    if (activeParam !== "demand") return;
 
-  const colorScale = useMemo(
-    () => scaleQuantile().domain(values).range(colorRange),
-    [values, colorRange]
-  );
+    let cancelled = false;
+    setForecastLoading(true);
+    setForecastError(null);
+
+    analyticsApi
+      .getDemandForecast(selectedProduct, weeksAhead)
+      .then((res) => {
+        if (cancelled) return;
+        setForecastData(res);
+        setForecastLoading(false);
+        setLastUpdated(new Date());
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error("Demand forecast fetch failed:", err);
+        setForecastError(err.response?.data?.detail || err.message || "Failed to load forecast");
+        setForecastLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [activeParam, selectedProduct, weeksAhead]);
+
+  // Build district data from forecast response — aggregate across all weeks
+  const forecastDistrictData = useMemo(() => {
+    if (activeParam !== "demand" || !forecastData?.forecasts?.length) return null;
+
+    // Aggregate predicted_units across ALL forecast weeks per district
+    const aggregated = {}; // district_code -> { totalUnits, city, lat, lng }
+
+    for (const weekData of forecastData.forecasts) {
+      for (const city of weekData.cities) {
+        const code = city.district_code;
+        if (!code) continue;
+
+        if (!aggregated[code]) {
+          aggregated[code] = {
+            totalUnits: 0,
+            city: city.city,
+            lat: city.lat,
+            lng: city.lng,
+          };
+        }
+        // For duplicate district codes in same week, keep higher value
+        aggregated[code].totalUnits += city.predicted_units;
+      }
+    }
+
+    // Determine demand level from absolute predicted_units
+    const allUnits = Object.values(aggregated).map((a) => a.totalUnits);
+    const maxUnits = Math.max(...allUnits, 1);
+
+    const demandLevel = (units) => {
+      const ratio = units / maxUnits;
+      if (ratio >= 0.66) return "high";
+      if (ratio >= 0.33) return "medium";
+      return "low";
+    };
+
+    const data = {};
+    DISTRICTS.forEach((d) => {
+      const agg = aggregated[d.code];
+      if (agg) {
+        data[d.code] = {
+          district: d.name,
+          demand: agg.totalUnits,
+          demand_index: agg.totalUnits / maxUnits,
+          demand_level: demandLevel(agg.totalUnits),
+          predicted_units: agg.totalUnits,
+          city: agg.city,
+          _hasForecast: true,
+        };
+      } else {
+        data[d.code] = {
+          district: d.name,
+          demand: null,
+          demand_index: null,
+          demand_level: null,
+          predicted_units: null,
+          city: null,
+          _hasForecast: false,
+        };
+      }
+    });
+    return data;
+  }, [activeParam, forecastData]);
+
+  // Use forecast data when demand param is active, else mock data
+  const isDemandMode = activeParam === "demand" && forecastDistrictData !== null;
+  const effectiveData = isDemandMode ? forecastDistrictData : districtData;
+
+  const colorRange = COLOR_RANGES[activeParam];
+  const values = Object.values(effectiveData)
+    .map((d) => d[activeParam])
+    .filter((v) => v !== null && v !== undefined);
+  const minVal = values.length > 0 ? Math.min(...values) : 0;
+  const maxVal = values.length > 0 ? Math.max(...values) : 100;
+
+  const colorScale = useMemo(() => {
+    const steps = colorRange.length;
+    const domain = colorRange.map((_, i) => minVal + (i / (steps - 1)) * (maxVal - minVal));
+    return scaleLinear().domain(domain).range(colorRange).clamp(true);
+  }, [minVal, maxVal, colorRange]);
 
   const handleMouseEnter = useCallback(
     (geo, e) => {
       const code = geo.properties.dt_code;
-      const d = districtData[code];
+      const d = effectiveData[code];
       if (d) {
-        const param = SUPPLY_CHAIN_PARAMS.find((p) => p.key === activeParam);
-        setTooltipContent(`${d.district}: ${d[activeParam]}${param?.unit ? " " + param.unit : ""}`);
+        if (isDemandMode && d._hasForecast) {
+          setTooltipContent(`${d.district}: ${d.predicted_units} units (${d.demand_level})`);
+        } else if (isDemandMode && !d._hasForecast) {
+          setTooltipContent(`${d.district}: No forecast data`);
+        } else {
+          const param = SUPPLY_CHAIN_PARAMS.find((p) => p.key === activeParam);
+          setTooltipContent(`${d.district}: ${d[activeParam]}${param?.unit ? " " + param.unit : ""}`);
+        }
       } else {
         setTooltipContent(geo.properties.district || "Unknown");
       }
       setTooltipPos({ x: e.clientX, y: e.clientY });
     },
-    [districtData, activeParam]
+    [effectiveData, activeParam, isDemandMode]
   );
 
   const handleMouseLeave = useCallback(() => {
@@ -321,22 +519,41 @@ export default function HeatmapPage() {
   const handleDistrictClick = useCallback(
     (geo) => {
       const code = geo.properties.dt_code;
-      const d = districtData[code];
+      const d = effectiveData[code];
       if (d) setSelectedDistrict({ name: d.district, code, data: d });
     },
-    [districtData]
+    [effectiveData]
   );
 
   const handleRefresh = () => {
-    setDistrictData(generateDistrictData());
+    if (isDemandMode) {
+      // Re-trigger forecast fetch by toggling a dummy state
+      setForecastData(null);
+      setWeeksAhead((w) => w); // no-op to preserve value
+      // Force re-fetch by temporarily clearing
+      const product = selectedProduct;
+      setSelectedProduct("");
+      setTimeout(() => setSelectedProduct(product), 0);
+    } else {
+      setDistrictData(generateDistrictData());
+    }
     setLastUpdated(new Date());
   };
 
   /* Summary stats */
-  const avgDemand = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
-  const topDistrict = Object.entries(districtData).sort((a, b) => b[1][activeParam] - a[1][activeParam])[0];
-  const lowDistrict = Object.entries(districtData).sort((a, b) => a[1][activeParam] - b[1][activeParam])[0];
+  const coveredEntries = Object.entries(effectiveData)
+    .filter(([, d]) => d[activeParam] !== null && d[activeParam] !== undefined);
+  const coveredValues = coveredEntries.map(([, d]) => d[activeParam]);
+  const avgVal = coveredValues.length > 0
+    ? Math.round(coveredValues.reduce((a, b) => a + b, 0) / coveredValues.length)
+    : 0;
+  const sortedEntries = [...coveredEntries].sort((a, b) => b[1][activeParam] - a[1][activeParam]);
+  const topDistrict = sortedEntries[0];
+  const lowDistrict = sortedEntries[sortedEntries.length - 1];
   const activeParamInfo = SUPPLY_CHAIN_PARAMS.find((p) => p.key === activeParam);
+  const coveredCount = isDemandMode
+    ? Object.values(forecastDistrictData).filter((d) => d._hasForecast).length
+    : DISTRICTS.length;
 
   return (
     <div className="flex flex-col gap-6 p-4 sm:p-6 lg:p-8" style={{ background: "linear-gradient(135deg, #f0fdf9 0%, #f0f9ff 50%, #faf5ff 100%)", minHeight: "100%" }}>
@@ -355,18 +572,20 @@ export default function HeatmapPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Live toggle */}
-          <button
-            onClick={() => setIsLive(!isLive)}
-            className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-all duration-300 ${
-              isLive
-                ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/25"
-                : "border border-slate-200 bg-white text-slate-500 hover:border-emerald-300"
-            }`}
-          >
-            <span className={`inline-block h-2 w-2 rounded-full ${isLive ? "animate-pulse bg-white" : "bg-slate-300"}`} />
-            {isLive ? "Live" : "Paused"}
-          </button>
+          {/* Live toggle (hidden in demand mode) */}
+          {activeParam !== "demand" && (
+            <button
+              onClick={() => setIsLive(!isLive)}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-all duration-300 ${
+                isLive
+                  ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/25"
+                  : "border border-slate-200 bg-white text-slate-500 hover:border-emerald-300"
+              }`}
+            >
+              <span className={`inline-block h-2 w-2 rounded-full ${isLive ? "animate-pulse bg-white" : "bg-slate-300"}`} />
+              {isLive ? "Live" : "Paused"}
+            </button>
+          )}
 
           {/* Refresh */}
           <button
@@ -388,12 +607,84 @@ export default function HeatmapPage() {
       {/* Parameter Selector */}
       <ParamSelector params={SUPPLY_CHAIN_PARAMS} active={activeParam} onSelect={setActiveParam} />
 
+      {/* Demand Forecast Controls */}
+      {activeParam === "demand" && (
+        <div className="flex flex-wrap items-center gap-4">
+          {/* Product selector */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-500">Product:</span>
+            <select
+              value={selectedProduct}
+              onChange={(e) => setSelectedProduct(e.target.value)}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition-all hover:border-teal-300 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/20"
+            >
+              {PRODUCT_LIST.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Weeks ahead selector */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-500">Forecast:</span>
+            <div className="flex gap-1">
+              {WEEKS_OPTIONS.map((w) => (
+                <button
+                  key={w}
+                  onClick={() => setWeeksAhead(w)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+                    weeksAhead === w
+                      ? "bg-teal-500 text-white shadow-sm"
+                      : "border border-slate-200 bg-white text-slate-500 hover:border-teal-300"
+                  }`}
+                >
+                  {w}W
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Forecast week label */}
+          {forecastData?.forecasts?.length > 0 && (
+            <span className="rounded-full bg-teal-50 px-3 py-1 text-[10px] font-bold text-teal-600">
+              {forecastData.forecasts.length === 1
+                ? `Week: ${forecastData.forecasts[0].forecast_week}`
+                : `Weeks: ${forecastData.forecasts[0].forecast_week} — ${forecastData.forecasts[forecastData.forecasts.length - 1].forecast_week}`}
+            </span>
+          )}
+
+          {/* Loading indicator */}
+          {forecastLoading && (
+            <span className="text-[10px] font-medium text-slate-400 animate-pulse">
+              Loading forecast...
+            </span>
+          )}
+
+          {/* Error indicator */}
+          {forecastError && (
+            <span className="text-[10px] font-medium text-rose-500">
+              {forecastError}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatsCard icon="analytics" label={`Avg ${activeParamInfo?.label}`} value={`${avgDemand}${activeParamInfo?.unit ? " " + activeParamInfo.unit : ""}`} trend={rand(-15, 25)} color="#14b8a6" />
+        <StatsCard
+          icon="analytics"
+          label={isDemandMode ? `Avg Demand (${selectedProduct}, ${weeksAhead}W)` : `Avg ${activeParamInfo?.label}`}
+          value={isDemandMode ? `${avgVal} units` : `${avgVal}${activeParamInfo?.unit ? " " + activeParamInfo.unit : ""}`}
+          color="#14b8a6"
+        />
         <StatsCard icon="arrow_upward" label="Highest District" value={topDistrict?.[1]?.district || "—"} color="#6366f1" />
         <StatsCard icon="arrow_downward" label="Lowest District" value={lowDistrict?.[1]?.district || "—"} color="#f43f5e" />
-        <StatsCard icon="location_on" label="Active Districts" value={DISTRICTS.length} trend={0} color="#f59e0b" />
+        <StatsCard
+          icon="location_on"
+          label={isDemandMode ? "Districts with Data" : "Active Districts"}
+          value={isDemandMode ? `${coveredCount}/${DISTRICTS.length}` : DISTRICTS.length}
+          color="#f59e0b"
+        />
       </div>
 
       {/* Map + Sidebar layout */}
@@ -407,8 +698,13 @@ export default function HeatmapPage() {
                 <span className="material-symbols-outlined text-[18px] text-teal-500">public</span>
                 <span className="text-xs font-bold text-slate-700">Maharashtra, India</span>
                 <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[9px] font-bold text-teal-600">
-                  {DISTRICTS.length} Districts
+                  {isDemandMode ? `${coveredCount}/${DISTRICTS.length} Districts` : `${DISTRICTS.length} Districts`}
                 </span>
+                {isDemandMode && (
+                  <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[9px] font-bold text-indigo-600">
+                    ML Forecast
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -449,15 +745,23 @@ export default function HeatmapPage() {
                     {({ geographies }) =>
                       geographies.map((geo) => {
                         const code = geo.properties.dt_code;
-                        const d = districtData[code];
+                        const d = effectiveData[code];
                         const value = d?.[activeParam];
                         const isSelected = selectedDistrict?.code === code;
+                        const noData = isDemandMode && d && !d._hasForecast;
+
                         return (
                           <Geography
                             key={geo.rsmKey}
                             geography={geo}
-                            fill={value !== undefined ? colorScale(value) : "#e2e8f0"}
-                            stroke={isSelected ? "#0d9488" : "#fff"}
+                            fill={
+                              noData
+                                ? "#f1f5f9"
+                                : value !== undefined && value !== null
+                                ? colorScale(value)
+                                : "#e2e8f0"
+                            }
+                            stroke={isSelected ? "#0d9488" : noData ? "#e2e8f0" : "#fff"}
                             strokeWidth={isSelected ? 2 : 0.6}
                             style={{
                               default: {
@@ -465,7 +769,7 @@ export default function HeatmapPage() {
                                 transition: "all 300ms",
                               },
                               hover: {
-                                fill: "#5eead4",
+                                fill: noData ? "#e2e8f0" : "#5eead4",
                                 outline: "none",
                                 cursor: "pointer",
                                 strokeWidth: 1.5,
@@ -504,6 +808,7 @@ export default function HeatmapPage() {
                   district={selectedDistrict.name}
                   data={selectedDistrict.data}
                   paramKey={activeParam}
+                  isDemandMode={isDemandMode}
                   onClose={() => setSelectedDistrict(null)}
                 />
               )}
@@ -513,9 +818,9 @@ export default function HeatmapPage() {
             <div className="border-t border-slate-100 px-5 py-3">
               <GradientLegend
                 colors={colorRange}
-                min={minVal}
-                max={maxVal}
-                label={activeParamInfo?.label || "Value"}
+                min={isDemandMode ? "Low" : minVal}
+                max={isDemandMode ? "High" : maxVal}
+                label={isDemandMode ? `${selectedProduct} — Demand Forecast` : (activeParamInfo?.label || "Value")}
               />
             </div>
           </div>
@@ -527,14 +832,16 @@ export default function HeatmapPage() {
           <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
             <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400">
               <span className="material-symbols-outlined text-[14px] text-emerald-500">leaderboard</span>
-              Top Districts
+              {isDemandMode ? "Top Demand Districts" : "Top Districts"}
             </h3>
             <div className="space-y-2">
-              {Object.entries(districtData)
-                .sort((a, b) => b[1][activeParam] - a[1][activeParam])
+              {sortedEntries
                 .slice(0, 8)
                 .map(([code, d], i) => {
                   const pct = maxVal > 0 ? Math.round((d[activeParam] / maxVal) * 100) : 0;
+                  const displayValue = isDemandMode && d.predicted_units
+                    ? `${d.predicted_units} units`
+                    : `${d[activeParam]}${activeParamInfo?.unit ? " " + activeParamInfo.unit : ""}`;
                   return (
                     <div
                       key={code}
@@ -557,10 +864,7 @@ export default function HeatmapPage() {
                           </span>
                         </div>
                         <span className="text-xs font-bold text-slate-600">
-                          {d[activeParam]}
-                          {activeParamInfo?.unit && (
-                            <span className="ml-0.5 text-[9px] font-normal text-slate-400">{activeParamInfo.unit}</span>
-                          )}
+                          {displayValue}
                         </span>
                       </div>
                       <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
@@ -586,10 +890,15 @@ export default function HeatmapPage() {
             </h3>
             <div className="space-y-2">
               {MAHARASHTRA_CITIES.slice(0, 8).map((city) => {
-                const distEntry = Object.entries(districtData).find(
+                const distEntry = Object.entries(effectiveData).find(
                   ([, d]) => d.district === city.district
                 );
-                const val = distEntry ? distEntry[1][activeParam] : "—";
+                const d = distEntry ? distEntry[1] : null;
+                const val = isDemandMode && d?._hasForecast
+                  ? `${d.predicted_units} units`
+                  : isDemandMode && d && !d._hasForecast
+                  ? "—"
+                  : d ? d[activeParam] : "—";
                 return (
                   <div
                     key={city.name}
@@ -603,7 +912,7 @@ export default function HeatmapPage() {
                     </div>
                     <span className="text-xs font-bold text-slate-700">
                       {val}
-                      {activeParamInfo?.unit && typeof val === "number" && (
+                      {!isDemandMode && activeParamInfo?.unit && typeof val === "number" && (
                         <span className="ml-0.5 text-[9px] font-normal text-slate-400">{activeParamInfo.unit}</span>
                       )}
                     </span>
@@ -620,9 +929,19 @@ export default function HeatmapPage() {
               <span className="text-xs font-bold text-teal-700">About this Heatmap</span>
             </div>
             <p className="text-[11px] leading-relaxed text-teal-600/80">
-              Visualizing real-time supply chain parameters across Maharashtra's {DISTRICTS.length} districts.
-              Click on any district for detailed metrics. Toggle <strong>Live</strong> mode for auto-refreshing data
-              every 5 seconds.
+              {isDemandMode ? (
+                <>
+                  Showing <strong>ML-powered demand forecasts</strong> for <strong>{selectedProduct}</strong> across
+                  Maharashtra ({weeksAhead}W total). {coveredCount} of {DISTRICTS.length} districts have forecast coverage.
+                  Gray districts lack prediction data. Colors reflect absolute predicted units.
+                </>
+              ) : (
+                <>
+                  Visualizing real-time supply chain parameters across Maharashtra's {DISTRICTS.length} districts.
+                  Click on any district for detailed metrics. Toggle <strong>Live</strong> mode for auto-refreshing data
+                  every 5 seconds.
+                </>
+              )}
             </p>
           </div>
         </div>

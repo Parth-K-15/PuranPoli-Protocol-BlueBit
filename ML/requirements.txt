@@ -6,3 +6,4 @@ pandas
 scikit-learn
 xgboost
 pydantic
+matplotlib

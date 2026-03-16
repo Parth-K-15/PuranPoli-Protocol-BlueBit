@@ -2,7 +2,7 @@ import axios from "axios";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api/v1";
 const ANALYTICS_API_BASE_URL =
-  import.meta.env.VITE_ANALYTICS_API_URL || "http://localhost:8001";
+  import.meta.env.VITE_ANALYTICS_API_URL || "http://localhost:8002";
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -222,6 +222,21 @@ export const analyticsApi = {
     const { data } = await analyticsApiClient.get(
       "/analytics/demand-supply-mismatch",
       { params: { limit } }
+    );
+    return data;
+  },
+
+  getDemandForecast: async (product = "Paracetamol", weeks_ahead = 1) => {
+    const { data } = await analyticsApiClient.get(
+      "/analytics/demand-forecast",
+      { params: { product, weeks_ahead } }
+    );
+    return data;
+  },
+
+  getDemandForecastProducts: async () => {
+    const { data } = await analyticsApiClient.get(
+      "/analytics/demand-forecast/products"
     );
     return data;
   },
