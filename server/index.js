@@ -17,6 +17,7 @@ const disruptionRoutes = require("./src/external-intelligence/api/disruptionRout
 const locationRoutes = require("./src/routes/locationRoutes");
 const catalogRoutes = require("./src/routes/catalogRoutes");
 const supplierRoutes = require("./src/routes/supplierRoutes");
+const workflowRoutes = require("./src/routes/workflowRoutes");
 const MonitoredLocation = require("./src/models/monitoredLocation");
 const { startScheduler } = require("./src/external-intelligence/scheduler/ingestionScheduler");
 
@@ -41,6 +42,7 @@ app.use("/api/v1/disruptions", disruptionRoutes);
 app.use("/api/v1/locations", locationRoutes);
 app.use("/api/v1", catalogRoutes);
 app.use("/api/v1/suppliers", supplierRoutes);
+app.use("/api/v1/workflow", workflowRoutes);
 
 // ── Error Handling ────────────────────────────────────────────────────────────
 app.use(notFound);
@@ -50,8 +52,12 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 5000;
 
 const start = async () => {
-  await connectDB();
-  await MonitoredLocation.seedDefaults();
+  const dbConn = await connectDB();
+  if (dbConn) {
+    await MonitoredLocation.seedDefaults();
+  } else {
+    console.warn("Starting without MongoDB. Data-backed routes may fail until DB is reachable.");
+  }
   const neo4jConnected = await connectNeo4j();
   if (!neo4jConnected) {
     console.warn("Neo4j-dependent features are disabled for this session.");

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { graphApi } from "../services/api";
+import { graphApi, workflowApi } from "../services/api";
 import { getDisruptions, getHighRisk } from "../services/disruptionApi";
 
 function KpiCard({ icon, iconClass, label, value, sub }) {
@@ -30,6 +30,11 @@ function DashboardPage() {
   const [disruptions, setDisruptions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [computing, setComputing] = useState(false);
+  const [workflowRunning, setWorkflowRunning] = useState(false);
+  const [workflowOutput, setWorkflowOutput] = useState(null);
+  const [workflowError, setWorkflowError] = useState("");
+  const [workflowUrl, setWorkflowUrl] = useState(workflowApi.webhookUrl);
+  const [workflowPrompt, setWorkflowPrompt] = useState("");
 
   const load = async () => {
     try {
@@ -100,6 +105,47 @@ function DashboardPage() {
     }
   };
 
+  const handleRunWorkflow = async () => {
+    const promptText = workflowPrompt.trim();
+    if (!promptText) {
+      setWorkflowError("Please enter a supply chain prompt before running the workflow.");
+      return;
+    }
+
+    setWorkflowRunning(true);
+    setWorkflowError("");
+    setWorkflowOutput(null);
+
+    try {
+      const payload = {
+        trace_id: `dashboard-${Date.now()}`,
+        product_name: "Paracetamol 500mg Tablets",
+        api_ingredient: "Paracetamol",
+        formulation_type: "Tablet",
+        target_market: "India",
+        forecast_demand_units_month: 75000,
+        require_gmp: true,
+        require_fda: false,
+        cold_chain_required: false,
+        max_lead_time_days: 40,
+        budget_usd: 1800000,
+        supplier_candidates: [],
+        prompt: promptText,
+        generation_prompt: promptText,
+      };
+
+      const data = await workflowApi.runSupplyChainGeneration(payload, workflowUrl);
+      setWorkflowOutput(data ?? { ok: true, message: "Workflow executed with empty body." });
+    } catch (error) {
+      const message = error?.response?.data
+        ? JSON.stringify(error.response.data)
+        : error?.message || "Workflow call failed";
+      setWorkflowError(message);
+    } finally {
+      setWorkflowRunning(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -121,6 +167,50 @@ function DashboardPage() {
         <p className="max-w-sm text-center text-sm text-slate-500">
           Head to the Graph Builder to create your supply chain network, or load the demo to explore.
         </p>
+
+        <div className="w-full max-w-3xl rounded-2xl border border-[#b1b2ff]/10 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="w-full">
+              <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">n8n Workflow Output</h3>
+              <p className="mt-1 text-xs text-slate-500">POST target URL</p>
+              <input
+                type="text"
+                value={workflowUrl}
+                onChange={(e) => setWorkflowUrl(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-700 outline-none focus:border-[#b1b2ff]"
+                placeholder="https://your-server-or-webhook-url"
+              />
+              <p className="mt-3 text-xs text-slate-500">Supply chain prompt</p>
+              <textarea
+                value={workflowPrompt}
+                onChange={(e) => setWorkflowPrompt(e.target.value)}
+                className="mt-1 min-h-24 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-700 outline-none focus:border-[#b1b2ff]"
+                placeholder="Example: Build a resilient supply chain for insulin cold-chain distribution in India with dual API suppliers and one backup packaging site."
+              />
+            </div>
+            <button
+              type="button"
+              className="rounded-xl bg-[#b1b2ff] px-4 py-2 text-xs font-bold text-white hover:bg-[#9798f0] disabled:opacity-50"
+              onClick={handleRunWorkflow}
+              disabled={workflowRunning || !workflowUrl || !workflowPrompt.trim()}
+            >
+              {workflowRunning ? "Running..." : "Run Workflow"}
+            </button>
+          </div>
+
+          {workflowError && (
+            <div className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+              {workflowError}
+            </div>
+          )}
+
+          <pre className="max-h-72 overflow-auto rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs text-slate-700">
+            {workflowOutput
+              ? JSON.stringify(workflowOutput, null, 2)
+              : "Click Run Workflow to see the latest response payload here."}
+          </pre>
+        </div>
+
         <Link
           to="/app/graph"
           className="rounded-xl bg-[#b1b2ff] px-6 py-3 text-sm font-bold text-white hover:bg-[#9798f0]"
@@ -183,6 +273,50 @@ function DashboardPage() {
           value={disruptions.length}
           sub="Severity ≥ 60"
         />
+      </div>
+
+      {/* n8n Workflow Output */}
+      <div className="rounded-2xl border border-[#b1b2ff]/10 bg-white p-6 shadow-sm">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">n8n Workflow Output</h3>
+            <p className="mt-1 text-xs text-slate-500">POST target URL</p>
+            <input
+              type="text"
+              value={workflowUrl}
+              onChange={(e) => setWorkflowUrl(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-700 outline-none focus:border-[#b1b2ff]"
+              placeholder="https://your-server-or-webhook-url"
+            />
+            <p className="mt-3 text-xs text-slate-500">Supply chain prompt</p>
+            <textarea
+              value={workflowPrompt}
+              onChange={(e) => setWorkflowPrompt(e.target.value)}
+              className="mt-1 min-h-24 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-700 outline-none focus:border-[#b1b2ff]"
+              placeholder="Example: Build a resilient supply chain for insulin cold-chain distribution in India with dual API suppliers and one backup packaging site."
+            />
+          </div>
+          <button
+            type="button"
+            className="rounded-xl bg-[#b1b2ff] px-4 py-2 text-xs font-bold text-white hover:bg-[#9798f0] disabled:opacity-50"
+            onClick={handleRunWorkflow}
+            disabled={workflowRunning || !workflowUrl || !workflowPrompt.trim()}
+          >
+            {workflowRunning ? "Running..." : "Run Workflow"}
+          </button>
+        </div>
+
+        {workflowError && (
+          <div className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+            {workflowError}
+          </div>
+        )}
+
+        <pre className="max-h-72 overflow-auto rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs text-slate-700">
+          {workflowOutput
+            ? JSON.stringify(workflowOutput, null, 2)
+            : "Click Run Workflow to see the latest response payload here."}
+        </pre>
       </div>
 
       {/* Risk Probability Distribution */}

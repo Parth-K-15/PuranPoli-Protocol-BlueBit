@@ -3,6 +3,9 @@ import axios from "axios";
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api/v1";
 const ANALYTICS_API_BASE_URL =
   import.meta.env.VITE_ANALYTICS_API_URL || "http://localhost:8001";
+const N8N_WORKFLOW_URL =
+  import.meta.env.VITE_N8N_WORKFLOW_URL ||
+  "https://digvi.app.n8n.cloud/webhook/ai-generate-supply-chain-v3";
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -195,6 +198,18 @@ export const analyticsApi = {
       "/analytics/demand-supply-mismatch",
       { params: { limit } }
     );
+    return data;
+  },
+};
+
+export const workflowApi = {
+  webhookUrl: N8N_WORKFLOW_URL,
+  runSupplyChainGeneration: async (payload, urlOverride) => {
+    const targetUrl = urlOverride || N8N_WORKFLOW_URL;
+    const { data } = await api.post("/workflow/run", {
+      targetUrl,
+      payload,
+    });
     return data;
   },
 };

@@ -15,6 +15,7 @@ APP_DIR = Path(__file__).resolve().parent
 ML_DIR = APP_DIR.parent
 
 DATASET_CANDIDATES = [
+    ML_DIR / "pharma_supply_chain_risk.updated.csv",
     ML_DIR / "pharma_supply_chain_risk.csv",
     ML_DIR / "pharma_supply_chain_risk_data.csv",
 ]
