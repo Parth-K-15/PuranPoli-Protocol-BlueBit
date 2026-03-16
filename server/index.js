@@ -52,7 +52,10 @@ const PORT = process.env.PORT || 5000;
 const start = async () => {
   await connectDB();
   await MonitoredLocation.seedDefaults();
-  await connectNeo4j();
+  const neo4jConnected = await connectNeo4j();
+  if (!neo4jConnected) {
+    console.warn("Neo4j-dependent features are disabled for this session.");
+  }
   startScheduler();
   app.listen(PORT, () => {
     console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);

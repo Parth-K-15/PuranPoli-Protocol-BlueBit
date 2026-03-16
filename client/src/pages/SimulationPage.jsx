@@ -203,6 +203,9 @@ function SimulationPage() {
           {!simResult && !simRunning && (
             <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-dashed border-[#b1b2ff]/20 bg-white/50 p-12">
               <span className="material-symbols-outlined mb-4 text-5xl text-[#b1b2ff]/30">science</span>
+              <div className="mb-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-orange-700">
+                Under Development
+              </div>
               <h3 className="text-lg font-bold text-slate-700">Configure & Run</h3>
               <p className="mt-1 max-w-sm text-center text-sm text-slate-400">
                 Select a disruption type, target node, and severity, then run the simulation to see projected impacts.
