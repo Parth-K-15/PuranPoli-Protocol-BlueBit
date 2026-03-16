@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
-import { analyticsApi, graphApi } from "../services/api";
+import { useEffect, useState, useMemo } from "react";
+import { Background, Controls, ReactFlow } from "@xyflow/react";
+import CustomNode from "../components/CustomNode";
+import { analyticsApi, graphApi, workspaceApi } from "../services/api";
 
 const DISRUPTION_TYPES = [
   { id: "supplier_failure", label: "Supplier Failure", icon: "error", desc: "A key supplier goes offline" },
@@ -9,6 +11,10 @@ const DISRUPTION_TYPES = [
   { id: "quality_issue", label: "Quality Issue", icon: "gpp_bad", desc: "Batch recall or quality failure" },
   { id: "regulatory_change", label: "Regulatory Change", icon: "gavel", desc: "New compliance requirements" },
 ];
+
+const simulationNodeTypes = {
+  supplyNode: CustomNode,
+};
 
 function normalizeSimulationError(error) {
   const detail = error?.response?.data?.detail;
@@ -54,7 +60,10 @@ function getRiskBandClasses(risk) {
 function SimulationPage() {
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [workspaces, setWorkspaces] = useState([]);
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState("");
+  const [loadingWorkspaces, setLoadingWorkspaces] = useState(true);
+  const [loadingWorkspaceGraph, setLoadingWorkspaceGraph] = useState(false);
   const [selectedDisruptions, setSelectedDisruptions] = useState([]);
   const [targetNodeId, setTargetNodeId] = useState("");
   const [disruptionSeverities, setDisruptionSeverities] = useState({});
@@ -64,19 +73,45 @@ function SimulationPage() {
   const [simError, setSimError] = useState("");
 
   useEffect(() => {
-    async function load() {
+    async function loadWorkspaces() {
       try {
-        const data = await graphApi.getGraph();
+        const res = await workspaceApi.list();
+        setWorkspaces(res.workspaces || []);
+      } catch (error) {
+        console.error("Failed to load workspaces", error);
+      } finally {
+        setLoadingWorkspaces(false);
+      }
+    }
+
+    loadWorkspaces();
+  }, []);
+
+  useEffect(() => {
+    if (!activeWorkspaceId) return;
+
+    async function loadWorkspaceGraph() {
+      setLoadingWorkspaceGraph(true);
+      setTargetNodeId("");
+      setSimResult(null);
+
+      try {
+        const data = await graphApi.getGraph(activeWorkspaceId);
         setNodes(data.nodes || []);
         setEdges(data.edges || []);
       } catch (error) {
-        console.error("Failed to load graph", error);
+        console.error("Failed to load workspace graph", error);
+        setNodes([]);
+        setEdges([]);
       } finally {
-        setLoading(false);
+        setLoadingWorkspaceGraph(false);
       }
     }
-    load();
-  }, []);
+
+    loadWorkspaceGraph();
+  }, [activeWorkspaceId]);
+
+  const activeWorkspace = workspaces.find((w) => w._id === activeWorkspaceId);
 
   const toggleDisruption = (disruptionId) => {
     setSelectedDisruptions((current) => {
@@ -100,6 +135,63 @@ function SimulationPage() {
   const setDisruptionSeverity = (disruptionId, value) => {
     setDisruptionSeverities((prev) => ({ ...prev, [disruptionId]: value }));
   };
+
+  // Build simulated graph nodes with risk overlay + selection highlight
+  const displayNodes = useMemo(() => {
+    const impactMap = {};
+    if (simResult?.affectedNodes) {
+      for (const an of simResult.affectedNodes) {
+        impactMap[an.id] = an;
+      }
+    }
+
+    return nodes.map((n) => {
+      const impact = impactMap[n.id];
+      const isSelected = n.id === targetNodeId;
+
+      let borderColor = "";
+      let bgGlow = "";
+      if (impact) {
+        if (impact.delta > 20) {
+          borderColor = "#f97316";
+          bgGlow = "0 0 14px rgba(249,115,22,0.4)";
+        } else if (impact.delta > 10) {
+          borderColor = "#eab308";
+          bgGlow = "0 0 10px rgba(234,179,8,0.3)";
+        } else if (impact.delta > 0) {
+          borderColor = "#84cc16";
+          bgGlow = "";
+        }
+      }
+
+      if (isSelected && !borderColor) {
+        borderColor = "#6d6fd8";
+        bgGlow = "0 0 16px rgba(109,111,216,0.45)";
+      }
+
+      // Highlight target node in red
+      if (isSelected && simResult) {
+        borderColor = "#ef4444";
+        bgGlow = "0 0 20px rgba(239,68,68,0.5)";
+      }
+
+      return {
+        ...n,
+        selected: isSelected,
+        style: {
+          ...n.style,
+          ...(borderColor
+            ? {
+                border: `2.5px solid ${borderColor}`,
+                boxShadow: bgGlow,
+                borderRadius: "12px",
+                transition: "all 0.35s ease",
+              }
+            : {}),
+        },
+      };
+    });
+  }, [nodes, simResult, targetNodeId]);
 
   const runSimulation = async () => {
     if (!selectedDisruptions.length || !targetNodeId) return;
@@ -262,7 +354,55 @@ function SimulationPage() {
     }
   };
 
-  if (loading) {
+  if (loadingWorkspaces) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <span className="material-symbols-outlined animate-spin text-4xl text-[#b1b2ff]">progress_activity</span>
+      </div>
+    );
+  }
+
+  if (!activeWorkspaceId) {
+    return (
+      <div className="flex flex-col gap-8 p-8">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Scenario Simulation</h1>
+          <p className="text-sm text-slate-500">Select a workspace to open simulation lab</p>
+        </div>
+
+        <div className="rounded-2xl border border-[#b1b2ff]/10 bg-white p-6 shadow-sm">
+          <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-slate-400">Workspaces</h3>
+
+          {workspaces.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
+              No workspaces found. Create one in Graph Builder first.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {workspaces.map((workspace) => (
+                <button
+                  key={workspace._id}
+                  type="button"
+                  onClick={() => setActiveWorkspaceId(workspace._id)}
+                  className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-[#b1b2ff]/40 hover:bg-[#b1b2ff]/5"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">{workspace.name}</p>
+                    <p className="text-[11px] text-slate-400">
+                      {workspace.nodeCount || 0} nodes · {workspace.edgeCount || 0} links
+                    </p>
+                  </div>
+                  <span className="text-xs font-bold text-[#6d6fd8]">Open</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (loadingWorkspaceGraph) {
     return (
       <div className="flex flex-1 items-center justify-center">
         <span className="material-symbols-outlined animate-spin text-4xl text-[#b1b2ff]">progress_activity</span>
@@ -271,131 +411,198 @@ function SimulationPage() {
   }
 
   return (
-    <div className="flex flex-col gap-8 p-8">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Scenario Simulation</h1>
-        <p className="text-sm text-slate-500">Model disruptions and forecast cascading impacts</p>
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-1">
-          <div className="rounded-2xl border border-[#b1b2ff]/10 bg-white p-6 shadow-sm">
-            <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-slate-400">Build Scenario</h3>
-
-            <p className="mb-2 text-[10px] font-bold uppercase text-slate-400">Disruption Type</p>
-            <div className="mb-5 grid grid-cols-2 gap-2">
-              {DISRUPTION_TYPES.map((d) => (
-                <button
-                  key={d.id}
-                  type="button"
-                  className={`flex flex-col items-center gap-1 rounded-xl border p-3 text-center transition-all ${
-                    selectedDisruptions.includes(d.id)
-                      ? "border-[#b1b2ff] bg-[#b1b2ff]/10 text-[#b1b2ff]"
-                      : "border-slate-100 text-slate-500 hover:border-[#b1b2ff]/30"
-                  }`}
-                  onClick={() => toggleDisruption(d.id)}
-                >
-                  <span className="material-symbols-outlined text-[20px]">{d.icon}</span>
-                  <span className="text-[10px] font-semibold">{d.label}</span>
-                </button>
-              ))}
-            </div>
-
-            <label className="mb-5 block">
-              <span className="text-[10px] font-bold uppercase text-slate-400">Target Node</span>
-              <select
-                className="mt-1 w-full rounded-xl border border-[#b1b2ff]/10 bg-[#b1b2ff]/5 px-4 py-3 text-sm font-medium"
-                value={targetNodeId}
-                onChange={(e) => setTargetNodeId(e.target.value)}
-              >
-                <option value="">Select a node...</option>
-                {nodes.map((n) => (
-                  <option key={n.id} value={n.id}>{n.data?.name} ({n.data?.type})</option>
-                ))}
-              </select>
-            </label>
-
-            <div className="mb-5 block">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-[10px] font-bold uppercase text-slate-400">Severity by Disruption</span>
-              </div>
-              {selectedDisruptions.length ? (
-                <div className="space-y-3">
-                  {selectedDisruptions.map((id) => {
-                    const disruption = DISRUPTION_TYPES.find((item) => item.id === id);
-                    const currentSeverity = getDisruptionSeverity(id);
-                    return (
-                      <div key={`sev-${id}`} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3">
-                        <div className="mb-1 flex items-center justify-between">
-                          <span className="text-xs font-semibold text-slate-700">{disruption?.label || id}</span>
-                          <span className="text-xs font-bold text-[#b1b2ff]">{currentSeverity}%</span>
-                        </div>
-                        <input
-                          type="range"
-                          min="10"
-                          max="100"
-                          value={currentSeverity}
-                          onChange={(e) => setDisruptionSeverity(id, Number(e.target.value))}
-                          className="mt-1 w-full accent-[#b1b2ff]"
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-xs text-slate-500">Select one or more disruptions to configure severities.</p>
-              )}
-            </div>
-
-            <label className="mb-6 block">
-              <span className="text-[10px] font-bold uppercase text-slate-400">Duration (days)</span>
-              <input
-                type="number"
-                min="1"
-                max="365"
-                value={duration}
-                onChange={(e) => setDuration(Number(e.target.value))}
-                className="mt-1 w-full rounded-xl border border-[#b1b2ff]/10 bg-[#b1b2ff]/5 px-4 py-3 text-sm font-medium"
-              />
-            </label>
-
-            <button
-              type="button"
-              disabled={!selectedDisruptions.length || !targetNodeId || simRunning}
-              className="w-full rounded-xl bg-[#b1b2ff] py-3 text-sm font-bold text-white shadow-lg shadow-[#b1b2ff]/20 transition-colors hover:bg-[#9798f0] disabled:opacity-50"
-              onClick={runSimulation}
-            >
-              {simRunning ? (
-                <span className="flex items-center justify-center gap-2">
-                  <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
-                  Simulating...
-                </span>
-              ) : (
-                "Run Simulation"
-              )}
-            </button>
-          </div>
+    <div className="flex h-full flex-col">
+      {/* Top bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#b1b2ff]/10 bg-white/80 px-4 py-3 backdrop-blur-md sm:px-6">
+        <div>
+          <h1 className="text-lg font-bold text-slate-900">Scenario Simulation</h1>
+          <p className="text-xs text-slate-500">
+            {activeWorkspace?.name || "Selected workspace"} · Click a node on the graph to target it
+          </p>
         </div>
 
-        <div className="lg:col-span-2">
+        <button
+          type="button"
+          onClick={() => {
+            setActiveWorkspaceId("");
+            setNodes([]);
+            setEdges([]);
+            setTargetNodeId("");
+            setSimResult(null);
+            setSelectedDisruptions([]);
+            setDisruptionSeverities({});
+          }}
+          className="rounded-xl border border-[#b1b2ff]/20 bg-white px-4 py-2 text-xs font-bold text-[#6d6fd8] hover:bg-[#b1b2ff]/5"
+        >
+          Change Workspace
+        </button>
+      </div>
+
+      {/* Side-by-side: Graph + Build Scenario panel */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {/* Graph canvas — fills remaining space */}
+        <section className="relative min-h-0 flex-1">
+          {simResult && (
+            <div className="absolute left-4 top-3 z-10 flex items-center gap-3 rounded-xl border border-white/60 bg-white/80 px-3 py-1.5 text-[10px] shadow-sm backdrop-blur-sm">
+              <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500" /> Target</span>
+              <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-orange-500" /> High</span>
+              <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-yellow-500" /> Moderate</span>
+              <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-full bg-lime-500" /> Low</span>
+            </div>
+          )}
+
+          {nodes.length === 0 ? (
+            <div className="flex h-full items-center justify-center text-sm text-slate-500">
+              No nodes found in this workspace.
+            </div>
+          ) : (
+            <ReactFlow
+              nodes={displayNodes}
+              edges={edges}
+              nodeTypes={simulationNodeTypes}
+              fitView
+              minZoom={0.3}
+              maxZoom={1.8}
+              nodesDraggable={false}
+              nodesConnectable={false}
+              elementsSelectable={true}
+              onNodeClick={(_event, node) => setTargetNodeId(node.id)}
+            >
+              <Background gap={40} size={1} color="#b1b2ff33" />
+              <Controls showInteractive={false} />
+            </ReactFlow>
+          )}
+        </section>
+
+        {/* Build Scenario — right sidebar */}
+        <aside className="w-80 shrink-0 overflow-y-auto border-l border-[#b1b2ff]/10 bg-white p-5">
+          <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-slate-400">Build Scenario</h3>
+
+          {/* Disruption type (multi-select) */}
+          <p className="mb-2 text-[10px] font-bold uppercase text-slate-400">Disruption Type</p>
+          <div className="mb-5 grid grid-cols-2 gap-2">
+            {DISRUPTION_TYPES.map((d) => (
+              <button
+                key={d.id}
+                type="button"
+                className={`flex flex-col items-center gap-1 rounded-xl border p-3 text-center transition-all ${
+                  selectedDisruptions.includes(d.id)
+                    ? "border-[#b1b2ff] bg-[#b1b2ff]/10 text-[#b1b2ff]"
+                    : "border-slate-100 text-slate-500 hover:border-[#b1b2ff]/30"
+                }`}
+                onClick={() => toggleDisruption(d.id)}
+              >
+                <span className="material-symbols-outlined text-[20px]">{d.icon}</span>
+                <span className="text-[10px] font-semibold">{d.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Target node — click-to-select indicator */}
+          <div className="mb-5">
+            <span className="text-[10px] font-bold uppercase text-slate-400">Target Node</span>
+            {targetNodeId ? (() => {
+              const targetNode = nodes.find((n) => n.id === targetNodeId);
+              return (
+                <div className="mt-1 flex items-center gap-2 rounded-xl border border-[#6d6fd8]/30 bg-[#b1b2ff]/5 px-4 py-3">
+                  <span className="material-symbols-outlined text-[18px] text-[#6d6fd8]">check_circle</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-slate-800">{targetNode?.data?.name || targetNodeId}</p>
+                    <p className="text-[10px] text-slate-400">{targetNode?.data?.type || "Node"}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="text-slate-300 transition-colors hover:text-red-400"
+                    onClick={() => setTargetNodeId("")}
+                    title="Clear selection"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">close</span>
+                  </button>
+                </div>
+              );
+            })() : (
+              <div className="mt-1 flex items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3">
+                <span className="material-symbols-outlined text-[18px] text-slate-300">ads_click</span>
+                <p className="text-xs text-slate-400">Click a node on the graph</p>
+              </div>
+            )}
+          </div>
+
+          {/* Severity by Disruption */}
+          <div className="mb-5 block">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase text-slate-400">Severity by Disruption</span>
+            </div>
+            {selectedDisruptions.length ? (
+              <div className="space-y-3">
+                {selectedDisruptions.map((id) => {
+                  const disruption = DISRUPTION_TYPES.find((item) => item.id === id);
+                  const currentSeverity = getDisruptionSeverity(id);
+                  return (
+                    <div key={`sev-${id}`} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3">
+                      <div className="mb-1 flex items-center justify-between">
+                        <span className="text-xs font-semibold text-slate-700">{disruption?.label || id}</span>
+                        <span className="text-xs font-bold text-[#b1b2ff]">{currentSeverity}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="10"
+                        max="100"
+                        value={currentSeverity}
+                        onChange={(e) => setDisruptionSeverity(id, Number(e.target.value))}
+                        className="mt-1 w-full accent-[#b1b2ff]"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500">Select one or more disruptions to configure severities.</p>
+            )}
+          </div>
+
+          {/* Duration */}
+          <label className="mb-6 block">
+            <span className="text-[10px] font-bold uppercase text-slate-400">Duration (days)</span>
+            <input
+              type="number"
+              min="1"
+              max="365"
+              value={duration}
+              onChange={(e) => setDuration(Number(e.target.value))}
+              className="mt-1 w-full rounded-xl border border-[#b1b2ff]/10 bg-[#b1b2ff]/5 px-4 py-3 text-sm font-medium"
+            />
+          </label>
+
+          <button
+            type="button"
+            disabled={!selectedDisruptions.length || !targetNodeId || simRunning}
+            className="w-full rounded-xl bg-[#b1b2ff] py-3 text-sm font-bold text-white shadow-lg shadow-[#b1b2ff]/20 transition-colors hover:bg-[#9798f0] disabled:opacity-50"
+            onClick={runSimulation}
+          >
+            {simRunning ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
+                Simulating...
+              </span>
+            ) : (
+              "Run Simulation"
+            )}
+          </button>
+        </aside>
+      </div>
+
+      {/* Results — below the side-by-side area */}
+      {(simResult || simRunning || simError) && (
+        <div className="shrink-0 overflow-y-auto border-t border-[#b1b2ff]/10 bg-white p-6">
           {simError && (
             <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {simError}
             </div>
           )}
 
-          {!simResult && !simRunning && (
-            <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-dashed border-[#b1b2ff]/20 bg-white/50 p-12">
-              <span className="material-symbols-outlined mb-4 text-5xl text-[#b1b2ff]/30">science</span>
-              <h3 className="text-lg font-bold text-slate-700">Configure & Run</h3>
-              <p className="mt-1 max-w-sm text-center text-sm text-slate-400">
-                Select a disruption type, target node, and severity, then run the simulation to see projected impacts.
-              </p>
-            </div>
-          )}
-
           {simRunning && (
-            <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-[#b1b2ff]/10 bg-white p-12">
+            <div className="flex flex-col items-center justify-center py-8">
               <span className="material-symbols-outlined animate-spin text-5xl text-[#b1b2ff]">progress_activity</span>
               <p className="mt-4 text-sm font-semibold text-slate-600">Running simulation model...</p>
             </div>
@@ -403,6 +610,7 @@ function SimulationPage() {
 
           {simResult && (
             <div className="flex flex-col gap-6">
+              {/* Impact summary cards */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div className="rounded-2xl border border-[#b1b2ff]/10 bg-white p-5 shadow-sm">
                   <p className="text-[10px] font-bold uppercase text-slate-400">Nodes Impacted</p>
@@ -425,6 +633,7 @@ function SimulationPage() {
                 </div>
               </div>
 
+              {/* Scenario detail card */}
               <div className="rounded-2xl border border-[#b1b2ff]/10 bg-white p-6 shadow-sm">
                 <div className="mb-4 flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-50 text-red-600">
@@ -464,6 +673,7 @@ function SimulationPage() {
                 </div>
               </div>
 
+              {/* Impact Timeline + Ripple by Hop */}
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <div className="rounded-2xl border border-[#b1b2ff]/10 bg-white p-6 shadow-sm">
                   <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-slate-400">Impact Timeline</h3>
@@ -511,6 +721,7 @@ function SimulationPage() {
                 </div>
               </div>
 
+              {/* Cascading impact table */}
               <div className="rounded-2xl border border-[#b1b2ff]/10 bg-white p-6 shadow-sm">
                 <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-slate-400">
                   Cascading Impact ({simResult.affectedNodes.length} most affected)
@@ -551,7 +762,7 @@ function SimulationPage() {
             </div>
           )}
         </div>
-      </div>
+      )}
     </div>
   );
 }
