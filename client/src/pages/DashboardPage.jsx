@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { graphApi } from "../services/api";
 import { getDisruptions, getHighRisk } from "../services/disruptionApi";
+import { TIER_GROUPS } from "../constants/nodeMeta";
 
 function KpiCard({ icon, iconClass, label, value, sub }) {
   return (
@@ -25,6 +26,89 @@ function RiskBadge({ score }) {
   return <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">Critical</span>;
 }
 
+function TierSection({ group, nodes }) {
+  if (nodes.length === 0) {
+    return (
+      <div className={`rounded-2xl border p-5 ${group.accentColor}`}>
+        <div className="flex items-center gap-3">
+          <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${group.iconClass}`}>
+            <span className="material-symbols-outlined text-[20px]">{group.icon}</span>
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-slate-900">{group.label}</h3>
+            <p className="text-[10px] text-slate-400">{group.subtitle}</p>
+          </div>
+        </div>
+        <p className="mt-3 text-xs text-slate-400">No nodes in this tier yet.</p>
+      </div>
+    );
+  }
+
+  const avgRisk = Math.round(
+    nodes.reduce((sum, n) => sum + (n.data?.risk_score || 0), 0) / nodes.length
+  );
+  const highRiskCount = nodes.filter((n) => (n.data?.risk_score || 0) > 60).length;
+
+  return (
+    <div className={`rounded-2xl border p-5 shadow-sm ${group.accentColor}`}>
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${group.iconClass}`}>
+            <span className="material-symbols-outlined text-[20px]">{group.icon}</span>
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-slate-900">{group.label}</h3>
+            <p className="text-[10px] text-slate-400">{group.subtitle}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="text-right">
+            <p className="text-lg font-black text-slate-900">{nodes.length}</p>
+            <p className="text-[10px] text-slate-400">nodes</p>
+          </div>
+          <div className="text-right">
+            <p className="text-lg font-black text-slate-900">{avgRisk}%</p>
+            <p className="text-[10px] text-slate-400">avg risk</p>
+          </div>
+          {highRiskCount > 0 && (
+            <div className="text-right">
+              <p className="text-lg font-black text-red-600">{highRiskCount}</p>
+              <p className="text-[10px] text-red-400">high risk</p>
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="space-y-2">
+        {nodes
+          .sort((a, b) => (b.data?.risk_score || 0) - (a.data?.risk_score || 0))
+          .slice(0, 5)
+          .map((node) => (
+            <div
+              key={node.id}
+              className="flex items-center justify-between rounded-xl border border-white/60 bg-white/80 p-3"
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-slate-700">{node.data?.name}</span>
+                <span className="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                  {node.data?.country || "Unassigned"}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <RiskBadge score={node.data?.risk_score || 0} />
+                <span className="text-xs font-bold text-slate-600">{node.data?.risk_score || 0}%</span>
+              </div>
+            </div>
+          ))}
+        {nodes.length > 5 && (
+          <p className="pt-1 text-center text-[10px] text-slate-400">
+            + {nodes.length - 5} more nodes
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function DashboardPage() {
   const [stats, setStats] = useState(null);
   const [disruptions, setDisruptions] = useState([]);
@@ -34,7 +118,7 @@ function DashboardPage() {
   const load = async () => {
     try {
       const [graphData, disruptionRes] = await Promise.all([
-        graphApi.getGraph(),
+        graphApi.getGraph(localStorage.getItem("activeWorkspaceId")),
         getHighRisk().catch(() => ({ data: [] })),
       ]);
 
@@ -139,6 +223,11 @@ function DashboardPage() {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
 
+  const tierData = TIER_GROUPS.map((group) => ({
+    group,
+    nodes: stats.nodes.filter((n) => group.types.includes(n.data?.type)),
+  }));
+
   return (
     <div className="flex flex-col gap-6 p-4 sm:p-6 lg:gap-8 lg:p-8">
       {/* Header */}
@@ -201,6 +290,18 @@ function DashboardPage() {
           ))}
         </div>
       )}
+
+      {/* Supply Chain Tiers */}
+      <div>
+        <h2 className="mb-4 text-xs font-bold uppercase tracking-widest text-slate-400">
+          Supply Chain Tiers
+        </h2>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+          {tierData.map(({ group, nodes }) => (
+            <TierSection key={group.key} group={group} nodes={nodes} />
+          ))}
+        </div>
+      </div>
 
       {/* Grid: Type breakdown + Geography + High-risk table */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">

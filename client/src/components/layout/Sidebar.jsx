@@ -4,6 +4,7 @@ import { NavLink, useLocation } from "react-router-dom";
 const navItems = [
   { to: "/app", icon: "dashboard", label: "Dashboard" },
   { to: "/app/graph", icon: "hub", label: "Graph Builder" },
+  { to: "/app/marketplace", icon: "store", label: "Marketplace" },
   { to: "/app/risk", icon: "warning", label: "Risk Analysis" },
   { to: "/app/simulation", icon: "science", label: "Simulation" },
   { to: "/app/reports", icon: "summarize", label: "Reports" },
