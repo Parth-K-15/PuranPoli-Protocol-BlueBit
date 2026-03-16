@@ -38,13 +38,26 @@ function normalizeSimulationError(error) {
   return error?.message || "Failed to run simulation";
 }
 
+function getRiskBand(risk) {
+  if (risk >= 70) return "high";
+  if (risk >= 40) return "moderate";
+  return "low";
+}
+
+function getRiskBandClasses(risk) {
+  const band = getRiskBand(risk);
+  if (band === "high") return "bg-red-100 text-red-700";
+  if (band === "moderate") return "bg-amber-100 text-amber-700";
+  return "bg-green-100 text-green-700";
+}
+
 function SimulationPage() {
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedDisruption, setSelectedDisruption] = useState(null);
+  const [selectedDisruptions, setSelectedDisruptions] = useState([]);
   const [targetNodeId, setTargetNodeId] = useState("");
-  const [severity, setSeverity] = useState(50);
+  const [disruptionSeverities, setDisruptionSeverities] = useState({});
   const [duration, setDuration] = useState(7);
   const [simResult, setSimResult] = useState(null);
   const [simRunning, setSimRunning] = useState(false);
@@ -65,8 +78,31 @@ function SimulationPage() {
     load();
   }, []);
 
+  const toggleDisruption = (disruptionId) => {
+    setSelectedDisruptions((current) => {
+      const isSelected = current.includes(disruptionId);
+      if (isSelected) {
+        setDisruptionSeverities((prev) => {
+          const next = { ...prev };
+          delete next[disruptionId];
+          return next;
+        });
+        return current.filter((id) => id !== disruptionId);
+      }
+
+      setDisruptionSeverities((prev) => ({ ...prev, [disruptionId]: prev[disruptionId] ?? 50 }));
+      return [...current, disruptionId];
+    });
+  };
+
+  const getDisruptionSeverity = (disruptionId) => Number(disruptionSeverities[disruptionId] ?? 50);
+
+  const setDisruptionSeverity = (disruptionId, value) => {
+    setDisruptionSeverities((prev) => ({ ...prev, [disruptionId]: value }));
+  };
+
   const runSimulation = async () => {
-    if (!selectedDisruption || !targetNodeId) return;
+    if (!selectedDisruptions.length || !targetNodeId) return;
 
     setSimRunning(true);
     setSimResult(null);
@@ -97,6 +133,19 @@ function SimulationPage() {
         return {
           node_id: nodeId,
           edges: nodeEdges,
+          name: nodeData.name,
+          type: nodeData.type,
+          label: nodeData.label,
+          title: nodeData.title,
+          product: nodeData.product,
+          product_name: nodeData.product_name,
+          product_id: nodeData.product_id,
+          sku: nodeData.sku,
+          sku_id: nodeData.sku_id,
+          drug_name: nodeData.drug_name,
+          medicine: nodeData.medicine,
+          material: nodeData.material,
+          material_name: nodeData.material_name,
           financial_health_score: nodeData.financial_health_score,
           historical_delay_frequency_pct: nodeData.historical_delay_frequency_pct,
           batch_failure_rate_pct: nodeData.batch_failure_rate_pct,
@@ -115,10 +164,19 @@ function SimulationPage() {
 
       const payload = {
         origin_node_id: targetNodeId,
-        disruption_type: selectedDisruption,
-        severity: Number((severity / 10).toFixed(2)),
+        disruption_type: selectedDisruptions[0],
+        severity: Number(
+          (
+            Math.max(...selectedDisruptions.map((disruptionType) => getDisruptionSeverity(disruptionType))) /
+            10
+          ).toFixed(2)
+        ),
         max_hops: 4,
         risk_threshold: 20,
+        disruptions: selectedDisruptions.map((disruptionType) => ({
+          disruption_type: disruptionType,
+          severity: Number((getDisruptionSeverity(disruptionType) / 10).toFixed(2)),
+        })),
         nodes: payloadNodes,
       };
 
@@ -171,20 +229,29 @@ function SimulationPage() {
         0
       );
       const avgSimulated = nodes.length ? Math.round(simulatedTotal / nodes.length) : 0;
+      const maxSelectedSeverity = selectedDisruptions.length
+        ? Math.max(...selectedDisruptions.map((disruptionType) => getDisruptionSeverity(disruptionType)))
+        : 50;
 
       setSimResult({
-        disruption: DISRUPTION_TYPES.find((d) => d.id === selectedDisruption),
+        disruptions: DISRUPTION_TYPES.filter((d) => selectedDisruptions.includes(d.id)),
+        primaryDisruption: DISRUPTION_TYPES.find((d) => d.id === selectedDisruptions[0]),
         targetNode: targetNode?.data,
-        severity,
+        disruptionSeverities: Object.fromEntries(
+          selectedDisruptions.map((id) => [id, getDisruptionSeverity(id)])
+        ),
         duration,
         impactedNodeCount: Number(response.total_affected || 0) + 1,
         avgOriginal,
         avgSimulated,
         affectedNodes: affectedNodes.slice(0, 10),
         overallImpact: Math.max(0, avgSimulated - avgOriginal),
-        recoveryEstimate: Math.round(duration * (1 + severity / 100)),
+        recoveryEstimate: Math.round(duration * (1 + maxSelectedSeverity / 100)),
         originRiskDelta: Number((Number(response.origin_risk || 0) - originOriginalRisk).toFixed(2)),
         model: response.model,
+        affectedProducts: response.affected_products || [],
+        impactTimeline: response.impact_timeline || [],
+        rippleByHop: response.ripple_by_hop || [],
       });
     } catch (error) {
       console.error("Simulation request failed", error);
@@ -225,11 +292,11 @@ function SimulationPage() {
                   key={d.id}
                   type="button"
                   className={`flex flex-col items-center gap-1 rounded-xl border p-3 text-center transition-all ${
-                    selectedDisruption === d.id
+                    selectedDisruptions.includes(d.id)
                       ? "border-[#b1b2ff] bg-[#b1b2ff]/10 text-[#b1b2ff]"
                       : "border-slate-100 text-slate-500 hover:border-[#b1b2ff]/30"
                   }`}
-                  onClick={() => setSelectedDisruption(d.id)}
+                  onClick={() => toggleDisruption(d.id)}
                 >
                   <span className="material-symbols-outlined text-[20px]">{d.icon}</span>
                   <span className="text-[10px] font-semibold">{d.label}</span>
@@ -253,24 +320,37 @@ function SimulationPage() {
             </label>
 
             {/* Severity */}
-            <label className="mb-5 block">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold uppercase text-slate-400">Severity</span>
-                <span className="text-xs font-bold text-[#b1b2ff]">{severity}%</span>
+            <div className="mb-5 block">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase text-slate-400">Severity by Disruption</span>
               </div>
-              <input
-                type="range"
-                min="10"
-                max="100"
-                value={severity}
-                onChange={(e) => setSeverity(Number(e.target.value))}
-                className="mt-2 w-full accent-[#b1b2ff]"
-              />
-              <div className="flex justify-between text-[10px] text-slate-400">
-                <span>Minor</span>
-                <span>Catastrophic</span>
-              </div>
-            </label>
+              {selectedDisruptions.length ? (
+                <div className="space-y-3">
+                  {selectedDisruptions.map((id) => {
+                    const disruption = DISRUPTION_TYPES.find((item) => item.id === id);
+                    const currentSeverity = getDisruptionSeverity(id);
+                    return (
+                      <div key={`sev-${id}`} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3">
+                        <div className="mb-1 flex items-center justify-between">
+                          <span className="text-xs font-semibold text-slate-700">{disruption?.label || id}</span>
+                          <span className="text-xs font-bold text-[#b1b2ff]">{currentSeverity}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="10"
+                          max="100"
+                          value={currentSeverity}
+                          onChange={(e) => setDisruptionSeverity(id, Number(e.target.value))}
+                          className="mt-1 w-full accent-[#b1b2ff]"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">Select one or more disruptions to configure severities.</p>
+              )}
+            </div>
 
             {/* Duration */}
             <label className="mb-6 block">
@@ -287,7 +367,7 @@ function SimulationPage() {
 
             <button
               type="button"
-              disabled={!selectedDisruption || !targetNodeId || simRunning}
+              disabled={!selectedDisruptions.length || !targetNodeId || simRunning}
               className="w-full rounded-xl bg-[#b1b2ff] py-3 text-sm font-bold text-white shadow-lg shadow-[#b1b2ff]/20 transition-colors hover:bg-[#9798f0] disabled:opacity-50"
               onClick={runSimulation}
             >
@@ -314,9 +394,6 @@ function SimulationPage() {
           {!simResult && !simRunning && (
             <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-dashed border-[#b1b2ff]/20 bg-white/50 p-12">
               <span className="material-symbols-outlined mb-4 text-5xl text-[#b1b2ff]/30">science</span>
-              <div className="mb-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-orange-700">
-                Under Development
-              </div>
               <h3 className="text-lg font-bold text-slate-700">Configure & Run</h3>
               <p className="mt-1 max-w-sm text-center text-sm text-slate-400">
                 Select a disruption type, target node, and severity, then run the simulation to see projected impacts.
@@ -360,13 +437,86 @@ function SimulationPage() {
               <div className="rounded-2xl border border-[#b1b2ff]/10 bg-white p-6 shadow-sm">
                 <div className="mb-4 flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-50 text-red-600">
-                    <span className="material-symbols-outlined">{simResult.disruption.icon}</span>
+                    <span className="material-symbols-outlined">{simResult.primaryDisruption?.icon || "science"}</span>
                   </div>
                   <div>
-                    <p className="text-sm font-bold text-slate-900">{simResult.disruption.label}</p>
-                    <p className="text-xs text-slate-500">
-                      Target: {simResult.targetNode?.name} · Severity: {simResult.severity}% · Duration: {simResult.duration}d
+                    <p className="text-sm font-bold text-slate-900">
+                      {(simResult.disruptions || []).map((d) => d.label).join(" + ") || "Scenario"}
                     </p>
+                    <p className="text-xs text-slate-500">
+                      Target: {simResult.targetNode?.name} · Duration: {simResult.duration}d
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Severities: {(simResult.disruptions || [])
+                        .map((d) => `${d.label} ${simResult.disruptionSeverities?.[d.id] || 50}%`)
+                        .join(" · ")}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Affected Products</p>
+                  {simResult.affectedProducts?.length ? (
+                    <div className="flex flex-wrap gap-2">
+                      {simResult.affectedProducts.slice(0, 12).map((product) => (
+                        <span
+                          key={product}
+                          className="rounded-full border border-[#b1b2ff]/20 bg-[#b1b2ff]/10 px-3 py-1 text-[11px] font-medium text-[#6d6fd8]"
+                        >
+                          {product}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500">No explicit product labels on impacted nodes.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Timeline + Ripple view */}
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <div className="rounded-2xl border border-[#b1b2ff]/10 bg-white p-6 shadow-sm">
+                  <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-slate-400">Impact Timeline</h3>
+                  <div className="space-y-3">
+                    {(simResult.impactTimeline || []).map((step) => (
+                      <div key={`timeline-${step.hop}-${step.day}`} className="rounded-xl border border-slate-100 p-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-semibold text-slate-700">Day {step.day} · {step.stage}</p>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-slate-400">Hop {step.hop}</span>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${getRiskBandClasses(step.avg_risk)}`}
+                            >
+                              {getRiskBand(step.avg_risk)}
+                            </span>
+                          </div>
+                        </div>
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          Nodes: {step.affected_nodes} · Cumulative: {step.cumulative_affected} · Avg Risk: {step.avg_risk}% · Peak Risk: {step.peak_risk}%
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-[#b1b2ff]/10 bg-white p-6 shadow-sm">
+                  <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-slate-400">Ripple by Hop</h3>
+                  <div className="space-y-3">
+                    {(simResult.rippleByHop || []).map((hop) => (
+                      <div key={`hop-${hop.hop}`}>
+                        <div className="mb-1 flex items-center justify-between text-[11px] text-slate-600">
+                          <span className="font-semibold">Hop {hop.hop}</span>
+                          <span>{hop.nodes} nodes · Avg Risk {hop.avg_risk}%</span>
+                        </div>
+                        <div className="h-2 w-full rounded-full bg-slate-100">
+                          <div
+                            className="h-2 rounded-full bg-[#b1b2ff]"
+                            style={{ width: `${Math.min(100, Math.max(4, hop.avg_risk))}%` }}
+                          />
+                        </div>
+                        <p className="mt-1 text-[10px] text-slate-500">Peak Risk {hop.peak_risk}% · Avg Lead-time +{hop.avg_lead_time_increase}d</p>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>

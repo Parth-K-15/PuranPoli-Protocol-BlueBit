@@ -917,11 +917,12 @@ class NodeData(BaseModel):
 
 class SimulationRequest(BaseModel):
     origin_node_id: str
-    disruption_type: str
-    severity: float
+    disruption_type: Optional[str] = None
+    severity: float = 5.0
     nodes: List[NodeData]
     max_hops: int = 4
     risk_threshold: float = 20.0
+    disruptions: List[Dict[str, Any]] = []
 
 
 class AffectedNode(BaseModel):
@@ -931,6 +932,24 @@ class AffectedNode(BaseModel):
     lead_time_increase: float
     capacity_impact_pct: float
     effective_severity: float
+
+
+class TimelineEntry(BaseModel):
+    day: int
+    hop: int
+    stage: str
+    affected_nodes: int
+    cumulative_affected: int
+    avg_risk: float
+    peak_risk: float
+
+
+class RippleHopSummary(BaseModel):
+    hop: int
+    nodes: int
+    avg_risk: float
+    peak_risk: float
+    avg_lead_time_increase: float
 
 
 class SimulationResponse(BaseModel):
@@ -943,6 +962,108 @@ class SimulationResponse(BaseModel):
     origin_cap_impact: float
     affected_nodes: List[AffectedNode]
     total_affected: int
+    affected_products: List[str] = []
+    impact_timeline: List[TimelineEntry] = []
+    ripple_by_hop: List[RippleHopSummary] = []
+    applied_disruptions: List[Dict[str, Any]] = []
+
+
+def _extract_product_identifiers(node_data: Dict[str, Any]) -> List[str]:
+    product_keys = [
+        "product",
+        "product_name",
+        "product_id",
+        "name",
+        "label",
+        "title",
+        "sku",
+        "sku_id",
+        "drug_name",
+        "medicine",
+        "material",
+        "material_name",
+    ]
+
+    values: List[str] = []
+    for key in product_keys:
+        value = node_data.get(key)
+        if isinstance(value, str) and value.strip():
+            values.append(value.strip())
+
+    if values:
+        return values
+
+    node_id = str(node_data.get("node_id") or "").strip()
+    if node_id:
+        return [node_id]
+
+    return []
+
+
+def _build_timeline_and_ripple(
+    origin_risk: float,
+    origin_lt_inc: float,
+    affected_nodes: List[Dict[str, Any]],
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    by_hop: Dict[int, List[Dict[str, Any]]] = collections.defaultdict(list)
+    for item in affected_nodes:
+        by_hop[int(item["hop"])].append(item)
+
+    timeline: List[Dict[str, Any]] = [
+        {
+            "day": 0,
+            "hop": 0,
+            "stage": "Origin disruption",
+            "affected_nodes": 1,
+            "cumulative_affected": 1,
+            "avg_risk": round(origin_risk, 2),
+            "peak_risk": round(origin_risk, 2),
+        }
+    ]
+
+    ripple_by_hop: List[Dict[str, Any]] = []
+    cumulative = 1
+
+    for hop in sorted(by_hop.keys()):
+        hop_nodes = by_hop[hop]
+        risks = [float(n["risk_score"]) for n in hop_nodes]
+        lt_vals = [float(n["lead_time_increase"]) for n in hop_nodes]
+
+        cumulative += len(hop_nodes)
+        timeline.append(
+            {
+                "day": int(round(hop * 2 + max(0.0, (sum(lt_vals) / len(lt_vals))))),
+                "hop": hop,
+                "stage": f"Ripple hop {hop}",
+                "affected_nodes": len(hop_nodes),
+                "cumulative_affected": cumulative,
+                "avg_risk": round(sum(risks) / len(risks), 2),
+                "peak_risk": round(max(risks), 2),
+            }
+        )
+
+        ripple_by_hop.append(
+            {
+                "hop": hop,
+                "nodes": len(hop_nodes),
+                "avg_risk": round(sum(risks) / len(risks), 2),
+                "peak_risk": round(max(risks), 2),
+                "avg_lead_time_increase": round(sum(lt_vals) / len(lt_vals), 2),
+            }
+        )
+
+    if not ripple_by_hop:
+        ripple_by_hop.append(
+            {
+                "hop": 0,
+                "nodes": 1,
+                "avg_risk": round(origin_risk, 2),
+                "peak_risk": round(origin_risk, 2),
+                "avg_lead_time_increase": round(origin_lt_inc, 2),
+            }
+        )
+
+    return timeline, ripple_by_hop
 
 
 def _node_to_features(node_data: Dict[str, Any]) -> Dict[str, float]:
@@ -1048,13 +1169,14 @@ def _as_feature_vector(features: Dict[str, float], cols: List[str]) -> pd.DataFr
 
 def _ml_predict_disruption(
     node_data: Dict[str, Any],
-    disruption_type: str,
-    severity: float,
+    disruption_plan: List[Tuple[str, float]],
     risk_model: Pipeline,
     lead_time_model: Pipeline,
 ) -> Tuple[float, float, float]:
     base_features = _node_to_features(node_data)
-    perturbed_features = _perturb_features(base_features, disruption_type, severity)
+    perturbed_features = dict(base_features)
+    for disruption_type, severity in disruption_plan:
+        perturbed_features = _perturb_features(perturbed_features, disruption_type, severity)
 
     risk_pred = float(risk_model.predict(_as_feature_vector(perturbed_features, FEATURE_COLS))[0])
     simulated_risk = float(np.clip(round(risk_pred, 2), 0.0, 100.0))
@@ -1083,8 +1205,7 @@ def _ml_predict_disruption(
 def _bfs_cascade(
     origin_node_id: str,
     nodes_by_id: Dict[str, Dict[str, Any]],
-    disruption_type: str,
-    severity: float,
+    disruption_plan: List[Tuple[str, float]],
     max_hops: int,
     risk_threshold: float,
     risk_model: Pipeline,
@@ -1096,11 +1217,11 @@ def _bfs_cascade(
 
     origin_edges = nodes_by_id.get(origin_node_id, {}).get("edges", [])
     for next_node_id in origin_edges:
-        queue.append((next_node_id, 1, severity * HOP_ATTENUATION))
+        queue.append((next_node_id, 1, HOP_ATTENUATION))
 
     while queue:
-        node_id, hop, effective_severity = queue.popleft()
-        if node_id in visited or hop > max_hops or effective_severity <= 0:
+        node_id, hop, attenuation_scale = queue.popleft()
+        if node_id in visited or hop > max_hops or attenuation_scale <= 0:
             continue
 
         visited.add(node_id)
@@ -1108,10 +1229,18 @@ def _bfs_cascade(
         if node is None:
             continue
 
+        hop_disruption_plan = [
+            (disruption_type, severity * attenuation_scale)
+            for disruption_type, severity in disruption_plan
+        ]
+
+        effective_severity = max((severity for _, severity in hop_disruption_plan), default=0.0)
+        if effective_severity <= 0:
+            continue
+
         risk_score, lead_time_inc, cap_impact = _ml_predict_disruption(
             node,
-            disruption_type,
-            effective_severity,
+            hop_disruption_plan,
             risk_model,
             lead_time_model,
         )
@@ -1131,10 +1260,10 @@ def _bfs_cascade(
         )
 
         if hop < max_hops:
-            next_severity = effective_severity * HOP_ATTENUATION
+            next_scale = attenuation_scale * HOP_ATTENUATION
             for neighbor_id in node.get("edges", []):
                 if neighbor_id not in visited:
-                    queue.append((neighbor_id, hop + 1, next_severity))
+                    queue.append((neighbor_id, hop + 1, next_scale))
 
     affected_nodes.sort(key=lambda item: (-item["risk_score"], item["hop"]))
     return affected_nodes
@@ -1142,14 +1271,33 @@ def _bfs_cascade(
 
 @app.post("/analytics/simulate", response_model=SimulationResponse)
 def simulate(req: SimulationRequest) -> SimulationResponse:
-    if req.disruption_type not in VALID_DISRUPTIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported disruption_type '{req.disruption_type}'",
-        )
-
     if req.severity < 0 or req.severity > 10:
         raise HTTPException(status_code=400, detail="severity must be between 0 and 10")
+
+    disruption_items = req.disruptions or []
+    if disruption_items:
+        disruption_plan_raw: List[Tuple[str, float]] = []
+        for item in disruption_items:
+            disruption_type = str(item.get("disruption_type") or "").strip()
+            if disruption_type not in VALID_DISRUPTIONS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported disruption_type '{disruption_type}'",
+                )
+            item_severity = float(item.get("severity", req.severity))
+            if item_severity < 0 or item_severity > 10:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Each disruption severity must be between 0 and 10",
+                )
+            disruption_plan_raw.append((disruption_type, item_severity))
+    else:
+        if req.disruption_type not in VALID_DISRUPTIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported disruption_type '{req.disruption_type}'",
+            )
+        disruption_plan_raw = [(req.disruption_type, req.severity)]
 
     risk_model = state.get("simulation_risk_model")
     lead_time_model = state.get("simulation_lead_time_model")
@@ -1173,12 +1321,14 @@ def simulate(req: SimulationRequest) -> SimulationResponse:
     if origin_node is None:
         raise HTTPException(status_code=400, detail="origin_node_id not found in payload")
 
-    normalized_severity = req.severity / 10.0
+    normalized_disruption_plan = [
+        (disruption_type, severity / 10.0)
+        for disruption_type, severity in disruption_plan_raw
+    ]
 
     origin_risk, origin_lt_inc, origin_cap_impact = _ml_predict_disruption(
         origin_node,
-        req.disruption_type,
-        normalized_severity,
+        normalized_disruption_plan,
         risk_model,
         lead_time_model,
     )
@@ -1186,22 +1336,50 @@ def simulate(req: SimulationRequest) -> SimulationResponse:
     affected_nodes = _bfs_cascade(
         origin_node_id=req.origin_node_id,
         nodes_by_id=nodes_by_id,
-        disruption_type=req.disruption_type,
-        severity=normalized_severity,
+        disruption_plan=normalized_disruption_plan,
         max_hops=max(1, int(req.max_hops)),
         risk_threshold=max(0.0, float(req.risk_threshold)),
         risk_model=risk_model,
         lead_time_model=lead_time_model,
     )
 
+    impacted_node_ids = {req.origin_node_id}
+    impacted_node_ids.update(str(item["node_id"]) for item in affected_nodes)
+
+    affected_products: List[str] = []
+    seen_products: Set[str] = set()
+    for node_id in impacted_node_ids:
+        node = nodes_by_id.get(node_id)
+        if node is None:
+            continue
+        for product in _extract_product_identifiers(node):
+            if product.lower() not in seen_products:
+                seen_products.add(product.lower())
+                affected_products.append(product)
+
+    timeline, ripple_by_hop = _build_timeline_and_ripple(
+        origin_risk=origin_risk,
+        origin_lt_inc=origin_lt_inc,
+        affected_nodes=affected_nodes,
+    )
+
     return SimulationResponse(
         model=str(state.get("simulation_model_version") or "simulation_ml_v1"),
         origin_node_id=req.origin_node_id,
-        disruption_type=req.disruption_type,
+        disruption_type=(
+            req.disruption_type if len(disruption_plan_raw) == 1 else "multi_disruption"
+        ),
         severity=req.severity,
         origin_risk=round(origin_risk, 2),
         origin_lt_inc=round(origin_lt_inc, 2),
         origin_cap_impact=round(origin_cap_impact, 3),
         affected_nodes=affected_nodes,
         total_affected=len(affected_nodes),
+        affected_products=affected_products,
+        impact_timeline=timeline,
+        ripple_by_hop=ripple_by_hop,
+        applied_disruptions=[
+            {"disruption_type": disruption_type, "severity": severity}
+            for disruption_type, severity in disruption_plan_raw
+        ],
     )
