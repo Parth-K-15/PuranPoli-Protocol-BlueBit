@@ -12,6 +12,7 @@ import SettingsPage from "./pages/SettingsPage";
 
 import Disruptions from "./pages/Disruptions";
 import LiveIntelFeed from "./pages/LiveIntelFeed";
+import HeatmapPage from "./pages/HeatmapPage";
 
 const router = createBrowserRouter([
   {
@@ -31,6 +32,7 @@ const router = createBrowserRouter([
       { path: "settings", element: <SettingsPage /> },
       { path: "disruptions", element: <Disruptions /> },
       { path: "live-feed", element: <LiveIntelFeed /> },
+      { path: "heatmap", element: <HeatmapPage /> },
     ],
   },
 ]);

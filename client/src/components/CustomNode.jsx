@@ -28,6 +28,9 @@ const riskClass = (riskScore = 0, riskProbability) => {
 
 function CustomNode({ data, selected }) {
   const typeClass = typeStyles[data.type] || "border-slate-300 bg-white text-slate-900";
+  const isSpofNode = Boolean(
+    data.is_spof || data.is_articulation_point || data.single_point_of_failure
+  );
   const meta = NODE_META[data.type] || {
     icon: "hub",
     title: data.type,
@@ -38,7 +41,9 @@ function CustomNode({ data, selected }) {
   return (
     <div
       className={`w-52 cursor-move rounded-2xl border-2 p-4 transition-all ${
-        (data.risk_probability === "Critical" || data.risk_probability === "High")
+        isSpofNode
+          ? "border-[#ff758f] bg-[#ff758f]/20 text-[#a61f3c]"
+          : (data.risk_probability === "Critical" || data.risk_probability === "High")
           ? "border-red-400 bg-red-50 text-red-900"
           : typeClass
       } ${

@@ -12,7 +12,7 @@ import {
 
 import CustomNode from "./CustomNode";
 import NodeCatalogModal from "./NodeCatalogModal";
-import { graphApi } from "../services/api";
+import { analyticsApi, graphApi } from "../services/api";
 
 const nodeTypes = {
   supplyNode: CustomNode,
@@ -121,6 +121,49 @@ function GraphCanvas({ onNodeSelect, refreshToken, setRefreshToken, workspaceId 
   const [catalogModal, setCatalogModal] = useState(null); // { nodeType, position }
   const { screenToFlowPosition, zoomIn, zoomOut, fitView } = useReactFlow();
 
+  const enrichNodesWithSpof = useCallback(async (baseNodes, baseEdges) => {
+    if (baseNodes.length === 0) {
+      return baseNodes;
+    }
+
+    const fallbackNodes = baseNodes.map((node) => ({
+      ...node,
+      data: {
+        ...node.data,
+        is_spof: Boolean(
+          node.data?.is_spof ||
+          node.data?.is_articulation_point ||
+          node.data?.single_point_of_failure
+        ),
+      },
+    }));
+
+    try {
+      const prediction = await analyticsApi.predictGraph({
+        nodes: baseNodes,
+        edges: baseEdges,
+      });
+      const nodePredictions = prediction?.predictions?.node_predictions || [];
+      const spofNodeIds = new Set(
+        nodePredictions
+          .filter((item) => item?.is_articulation_point)
+          .map((item) => item?.node_id)
+          .filter(Boolean)
+      );
+
+      return fallbackNodes.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          is_spof: node.data?.is_spof || spofNodeIds.has(node.id),
+        },
+      }));
+    } catch (error) {
+      console.warn("SPOF enrichment unavailable, using existing node flags", error);
+      return fallbackNodes;
+    }
+  }, []);
+
   const loadGraph = useCallback(async () => {
     if (!workspaceId) {
       setNodes([]);
@@ -136,10 +179,12 @@ function GraphCanvas({ onNodeSelect, refreshToken, setRefreshToken, workspaceId 
       withRelationshipLabel(edge, nodeTypeById)
     );
 
-    setNodes(loadedNodes);
+    const enrichedNodes = await enrichNodesWithSpof(loadedNodes, loadedEdges);
+
+    setNodes(enrichedNodes);
     setEdges(loadedEdges);
     setSelectedEdgeId(null);
-  }, [setEdges, setNodes, workspaceId]);
+  }, [enrichNodesWithSpof, setEdges, setNodes, workspaceId]);
 
   useEffect(() => {
     loadGraph();
@@ -393,6 +438,7 @@ function GraphCanvas({ onNodeSelect, refreshToken, setRefreshToken, workspaceId 
         <NodeCatalogModal
           nodeType={catalogModal.nodeType}
           position={catalogModal.position}
+          existingNodes={nodes}
           workspaceId={workspaceId}
           onSelect={handleCatalogSelect}
           onClose={() => setCatalogModal(null)}

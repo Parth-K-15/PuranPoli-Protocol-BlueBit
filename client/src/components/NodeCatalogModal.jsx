@@ -8,7 +8,7 @@ const riskColor = (score) => {
   return "text-red-600 bg-red-50";
 };
 
-function NodeCatalogModal({ nodeType, position, workspaceId, onSelect, onClose }) {
+function NodeCatalogModal({ nodeType, position, workspaceId, existingNodes = [], onSelect, onClose }) {
   const [catalog, setCatalog] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -36,12 +36,34 @@ function NodeCatalogModal({ nodeType, position, workspaceId, onSelect, onClose }
     return () => { cancelled = true; };
   }, [nodeType]);
 
+  const workspaceOptions = existingNodes
+    .filter((node) => node?.data?.type === nodeType)
+    .map((node) => ({
+      catalogId: `workspace_${node.id}`,
+      ...node.data,
+      __fromWorkspace: true,
+    }));
+
+  const filteredWorkspace = workspaceOptions.filter((item) =>
+    `${item.name} ${item.country} ${item.region}`.toLowerCase().includes(search.toLowerCase())
+  );
+
   const filtered = catalog.filter((item) =>
     `${item.name} ${item.country} ${item.region}`.toLowerCase().includes(search.toLowerCase())
   );
 
   const handleSelect = (item) => {
-    const { catalogId, ...data } = item;
+    const {
+      catalogId,
+      id,
+      _id,
+      workspace,
+      __v,
+      createdAt,
+      updatedAt,
+      __fromWorkspace,
+      ...data
+    } = item;
     onSelect({ ...data, type: nodeType, position });
   };
 
@@ -111,10 +133,81 @@ function NodeCatalogModal({ nodeType, position, workspaceId, onSelect, onClose }
             <div className="flex items-center justify-center py-12">
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#b1b2ff] border-t-transparent" />
             </div>
-          ) : filtered.length === 0 ? (
+          ) : filtered.length === 0 && filteredWorkspace.length === 0 ? (
             <p className="py-10 text-center text-sm text-slate-400">No matching entities found.</p>
           ) : (
             <div className="flex flex-col gap-2">
+              {filteredWorkspace.length > 0 && (
+                <div className="mb-2 rounded-xl border border-[#ff758f]/20 bg-[#ff758f]/5 px-3 py-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#a61f3c]">
+                    Already Used In This Workspace
+                  </p>
+                </div>
+              )}
+
+              {filteredWorkspace.map((item) => {
+                const isExpanded = expanded === item.catalogId;
+                return (
+                  <div
+                    key={item.catalogId}
+                    className="rounded-xl border border-[#ff758f]/20 bg-white transition-all hover:border-[#ff758f]/40 hover:shadow-lg hover:shadow-[#ff758f]/10"
+                  >
+                    <div
+                      className="flex cursor-pointer items-center gap-4 px-4 py-3"
+                      onClick={() => setExpanded(isExpanded ? null : item.catalogId)}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-900">{item.name}</p>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
+                            <span className="material-symbols-outlined text-[12px]">location_on</span>
+                            {item.country}
+                          </span>
+                          <span className={`rounded px-2 py-0.5 text-[10px] font-bold ${riskColor(item.risk_score)}`}>
+                            Risk {item.risk_score}%
+                          </span>
+                          <span className="rounded bg-[#ff758f]/15 px-2 py-0.5 text-[10px] font-medium text-[#a61f3c]">
+                            Reuse Existing
+                          </span>
+                        </div>
+                      </div>
+
+                      <span className={`material-symbols-outlined text-slate-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}>
+                        expand_more
+                      </span>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="border-t border-[#b1b2ff]/5 px-4 py-3">
+                        <div className="grid grid-cols-3 gap-x-4 gap-y-2 text-[11px]">
+                          <Detail label="Region" value={item.region} />
+                          <Detail label="Capacity" value={item.capacity?.toLocaleString()} />
+                          <Detail label="Inventory" value={item.inventory?.toLocaleString()} />
+                          <Detail label="Lead Time" value={`${item.lead_time_days}d`} />
+                          <Detail label="Reliability" value={`${item.reliability_score}%`} />
+                          <Detail label="Dependency" value={`${item.dependency_percentage}%`} />
+                          <Detail label="FDA Approval" value={item.fda_approval} />
+                          <Detail label="Compliance" value={item.compliance_status} />
+                          <Detail label="Financial Health" value={`${item.financial_health_score}%`} />
+                          <Detail label="Cost" value={`$${item.cost?.toLocaleString()}`} />
+                          <Detail label="MOQ" value={item.moq?.toLocaleString()} />
+                          <Detail label="Contract" value={`${item.contract_duration_months}mo`} />
+                          <Detail label="Batch Cycle" value={`${item.batch_cycle_time_days}d`} />
+                        </div>
+
+                        <button
+                          type="button"
+                          className="mt-3 w-full rounded-lg bg-[#ff758f] py-2.5 text-xs font-bold text-white transition-colors hover:bg-[#ff5d7f]"
+                          onClick={() => handleSelect(item)}
+                        >
+                          Add Another Like This
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
               {filtered.map((item) => {
                 const isExpanded = expanded === item.catalogId;
                 return (
@@ -190,7 +283,9 @@ function NodeCatalogModal({ nodeType, position, workspaceId, onSelect, onClose }
 
         {/* Footer */}
         <div className="flex items-center justify-between border-t border-[#b1b2ff]/10 px-6 py-3">
-          <p className="text-[11px] text-slate-400">{filtered.length} entities available</p>
+          <p className="text-[11px] text-slate-400">
+            {filteredWorkspace.length + filtered.length} entities available
+          </p>
           <button
             type="button"
             className="rounded-xl border border-[#b1b2ff]/20 px-4 py-2 text-xs font-bold text-[#6d6fd8] transition-colors hover:bg-[#b1b2ff]/5"
