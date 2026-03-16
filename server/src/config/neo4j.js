@@ -39,7 +39,7 @@ const connectNeo4j = async () => {
 };
 
 const getDriver = () => {
-  if (!driver) throw new Error("Neo4j driver not initialised. Call connectNeo4j() first.");
+  if (!driver) throw new Error("Neo4j is unavailable. Check your Aura instance or network.");
   return driver;
 };
 
