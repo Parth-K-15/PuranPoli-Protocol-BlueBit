@@ -45,6 +45,11 @@ const nodeSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+    district: {
+      type: String,
+      default: "",
+      trim: true,
+    },
     capacity: {
       type: Number,
       default: 0,

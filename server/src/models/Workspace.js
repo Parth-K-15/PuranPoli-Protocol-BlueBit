@@ -22,6 +22,18 @@ const workspaceSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    published: {
+      type: Boolean,
+      default: false,
+    },
+    publishedAt: {
+      type: Date,
+      default: null,
+    },
+    copyProtected: {
+      type: Boolean,
+      default: true,
+    },
   },
   { timestamps: true }
 );

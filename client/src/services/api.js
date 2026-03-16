@@ -34,6 +34,18 @@ export const workspaceApi = {
     const { data } = await api.delete(`/workspaces/${id}`);
     return data;
   },
+  togglePublish: async (id) => {
+    const { data } = await api.patch(`/workspaces/${id}/publish`);
+    return data;
+  },
+  duplicate: async (id) => {
+    const { data } = await api.post(`/workspaces/${id}/duplicate`);
+    return data;
+  },
+  getNodes: async (id) => {
+    const { data } = await api.get(`/workspaces/${id}/nodes`);
+    return data;
+  },
 };
 
 // ── Graph API (workspace-scoped) ────────────────────────────────────────────

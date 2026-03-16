@@ -6,13 +6,19 @@ const {
   createWorkspace,
   updateWorkspace,
   deleteWorkspace,
+  togglePublish,
+  duplicateWorkspace,
+  getWorkspaceNodes,
 } = require("../controllers/workspaceController");
 
 const router = express.Router();
 
 router.get("/", listWorkspaces);
-router.get("/:id", getWorkspace);
 router.post("/", createWorkspace);
+router.patch("/:id/publish", togglePublish);
+router.post("/:id/duplicate", duplicateWorkspace);
+router.get("/:id/nodes", getWorkspaceNodes);
+router.get("/:id", getWorkspace);
 router.patch("/:id", updateWorkspace);
 router.delete("/:id", deleteWorkspace);
 

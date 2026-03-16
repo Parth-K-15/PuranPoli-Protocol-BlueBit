@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ReactFlowProvider } from "@xyflow/react";
 
 import GraphCanvas from "../components/GraphCanvas";
@@ -7,6 +8,9 @@ import NodeSidebar from "../components/NodeSidebar";
 import { graphApi, workspaceApi } from "../services/api";
 
 function GraphBuilderPage() {
+  const [searchParams] = useSearchParams();
+  const urlWorkspaceId = searchParams.get("workspace");
+
   const [selectedNode, setSelectedNode] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
@@ -34,8 +38,11 @@ function GraphBuilderPage() {
 
         setWorkspaces(list);
         if (list.length > 0 && !activeWorkspaceId) {
-          const saved = localStorage.getItem("activeWorkspaceId");
-          const chosen = list.find((w) => w._id === saved)?._id || list[0]._id;
+          // Priority: URL param > localStorage > first workspace
+          const chosen =
+            (urlWorkspaceId && list.find((w) => w._id === urlWorkspaceId)?._id) ||
+            list.find((w) => w._id === localStorage.getItem("activeWorkspaceId"))?._id ||
+            list[0]._id;
           setActiveWorkspaceId(chosen);
           localStorage.setItem("activeWorkspaceId", chosen);
         }
@@ -152,6 +159,18 @@ function GraphBuilderPage() {
     }
   };
 
+  const handleTogglePublish = async () => {
+    if (!activeWorkspaceId) return;
+    try {
+      const res = await workspaceApi.togglePublish(activeWorkspaceId);
+      setWorkspaces((prev) =>
+        prev.map((w) => (w._id === activeWorkspaceId ? { ...w, ...res.workspace } : w))
+      );
+    } catch (error) {
+      console.error("Failed to toggle publish", error);
+    }
+  };
+
   return (
     <ReactFlowProvider>
       <div className="flex h-full flex-col">
@@ -197,6 +216,15 @@ function GraphBuilderPage() {
                         <span className="ml-2 text-[10px] text-slate-400">
                           {ws.nodeCount ?? 0}N / {ws.edgeCount ?? 0}E
                         </span>
+                        <span
+                          className={`ml-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${
+                            ws.published
+                              ? "bg-green-100 text-green-700"
+                              : "bg-slate-100 text-slate-400"
+                          }`}
+                        >
+                          {ws.published ? "Live" : "Draft"}
+                        </span>
                       </span>
                       <button
                         type="button"
@@ -231,6 +259,20 @@ function GraphBuilderPage() {
           </div>
 
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:gap-3">
+            <button
+              type="button"
+              className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition-all sm:px-4 ${
+                activeWorkspace?.published
+                  ? "border-green-200 bg-green-50 text-green-700 hover:bg-green-100"
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+              onClick={handleTogglePublish}
+            >
+              <span className="material-symbols-outlined text-[16px]">
+                {activeWorkspace?.published ? "visibility" : "visibility_off"}
+              </span>
+              {activeWorkspace?.published ? "Published" : "Publish"}
+            </button>
             <button
               type="button"
               disabled={isComputingRisks}

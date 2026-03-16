@@ -56,3 +56,60 @@ export const NODE_META = {
 };
 
 export const NODE_TYPES = Object.keys(NODE_META);
+
+export const TIER_GROUPS = [
+  {
+    key: "myNode",
+    label: "My Node",
+    subtitle: "Your production facilities",
+    icon: "factory",
+    iconClass: "bg-pink-100 text-pink-600",
+    accentColor: "border-pink-200 bg-pink-50",
+    types: ["Manufacturer"],
+  },
+  {
+    key: "rawMaterials",
+    label: "Raw Materials",
+    subtitle: "Input sources",
+    icon: "inventory_2",
+    iconClass: "bg-[#b1b2ff] text-white",
+    accentColor: "border-[#b1b2ff]/20 bg-[#b1b2ff]/5",
+    types: ["RawMaterialSource"],
+  },
+  {
+    key: "tier1",
+    label: "Tier 1 Suppliers",
+    subtitle: "Primary logistics",
+    icon: "local_shipping",
+    iconClass: "bg-blue-100 text-blue-600",
+    accentColor: "border-blue-200 bg-blue-50",
+    types: ["Tier1Supplier"],
+  },
+  {
+    key: "tier2",
+    label: "Tier 2 Suppliers",
+    subtitle: "Refining",
+    icon: "precision_manufacturing",
+    iconClass: "bg-violet-100 text-violet-600",
+    accentColor: "border-violet-200 bg-violet-50",
+    types: ["Tier2Supplier"],
+  },
+  {
+    key: "tier3",
+    label: "Tier 3 Suppliers",
+    subtitle: "Pre-processing",
+    icon: "science",
+    iconClass: "bg-indigo-100 text-indigo-600",
+    accentColor: "border-indigo-200 bg-indigo-50",
+    types: ["Tier3Supplier"],
+  },
+  {
+    key: "downstream",
+    label: "Downstream",
+    subtitle: "Storage, distribution, retail",
+    icon: "hub",
+    iconClass: "bg-emerald-100 text-emerald-600",
+    accentColor: "border-emerald-200 bg-emerald-50",
+    types: ["Warehouse", "ColdStorage", "Distributor", "Retailer"],
+  },
+];

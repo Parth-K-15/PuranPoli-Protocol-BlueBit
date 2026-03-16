@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { graphApi } from "../services/api";
+import { MAHARASHTRA_DISTRICTS } from "../constants/maharashtraDistricts";
 
 const severityLabel = (score) => {
   if (score >= 80) return { text: "Critical", cls: "bg-red-100 text-red-700" };
@@ -23,6 +24,7 @@ const fields = [
   { key: "type", label: "Type", type: "text", disabled: true },
   { key: "country", label: "Country", type: "text" },
   { key: "region", label: "Region", type: "text" },
+  { key: "district", label: "District (Maharashtra)", type: "select", options: ["", ...MAHARASHTRA_DISTRICTS] },
   { key: "capacity", label: "Capacity", type: "number" },
   { key: "inventory", label: "Inventory", type: "number" },
   { key: "risk_score", label: "Risk Score (0-100)", type: "number" },
