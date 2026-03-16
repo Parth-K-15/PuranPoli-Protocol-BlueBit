@@ -10,6 +10,9 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 
 APP_DIR = Path(__file__).resolve().parent
 ML_DIR = APP_DIR.parent
@@ -97,12 +100,211 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-state: Dict[str, pd.DataFrame] = {}
+state: Dict[str, Any] = {}
+
+FEATURE_COLS = [
+    "financial_health_score",
+    "historical_delay_frequency_pct",
+    "batch_failure_rate_pct",
+    "lead_time_volatility_days",
+    "dependency_pct",
+    "capacity_utilization_pct",
+    "gmp_status",
+    "fda_approved",
+    "active_disruption_signal",
+    "compliance_violation_flag",
+]
+
+FEATURE_DEFAULTS: Dict[str, float] = {
+    "financial_health_score": 0.70,
+    "historical_delay_frequency_pct": 0.15,
+    "batch_failure_rate_pct": 0.05,
+    "lead_time_volatility_days": 3.0,
+    "dependency_pct": 0.50,
+    "capacity_utilization_pct": 0.70,
+    "gmp_status": 1.0,
+    "fda_approved": 1.0,
+    "active_disruption_signal": 0.0,
+    "compliance_violation_flag": 0.0,
+}
+
+VALID_DISRUPTIONS = {
+    "supplier_failure",
+    "transport_delay",
+    "demand_surge",
+    "natural_disaster",
+    "quality_issue",
+    "regulatory_change",
+}
+
+HOP_ATTENUATION = 0.55
+
+
+def _to_binary(value: Any, default: float = 0.0) -> float:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return 1.0 if value else 0.0
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        return 1.0 if float(value) >= 0.5 else 0.0
+    text = str(value).strip().lower()
+    if text in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "compliant",
+        "approved",
+        "certified",
+        "pass",
+        "ok",
+        "not required",
+        "n/a",
+        "na",
+    }:
+        return 1.0
+    if text in {
+        "0",
+        "false",
+        "no",
+        "n",
+        "non-compliant",
+        "violation",
+        "pending",
+        "rejected",
+        "revoked",
+        "failed",
+    }:
+        return 0.0
+    return default
+
+
+def _to_float(value: Any, default: float) -> float:
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _clip_feature_ranges(features: Dict[str, float]) -> Dict[str, float]:
+    features["financial_health_score"] = float(
+        np.clip(features["financial_health_score"], 0.0, 1.0)
+    )
+    features["historical_delay_frequency_pct"] = float(
+        np.clip(features["historical_delay_frequency_pct"], 0.0, 1.0)
+    )
+    features["batch_failure_rate_pct"] = float(
+        np.clip(features["batch_failure_rate_pct"], 0.0, 1.0)
+    )
+    features["lead_time_volatility_days"] = float(
+        np.clip(features["lead_time_volatility_days"], 0.0, 60.0)
+    )
+    features["dependency_pct"] = float(np.clip(features["dependency_pct"], 0.0, 1.0))
+    features["capacity_utilization_pct"] = float(
+        np.clip(features["capacity_utilization_pct"], 0.0, 1.0)
+    )
+    for flag_col in [
+        "gmp_status",
+        "fda_approved",
+        "active_disruption_signal",
+        "compliance_violation_flag",
+    ]:
+        features[flag_col] = 1.0 if features[flag_col] >= 0.5 else 0.0
+    return features
+
+
+def _build_simulation_training_frame(df: pd.DataFrame) -> pd.DataFrame:
+    train = df.copy()
+    for col in FEATURE_COLS:
+        if col not in train.columns:
+            train[col] = FEATURE_DEFAULTS[col]
+
+    for flag_col in [
+        "gmp_status",
+        "fda_approved",
+        "active_disruption_signal",
+        "compliance_violation_flag",
+    ]:
+        train[flag_col] = train[flag_col].astype(int)
+
+    for col in FEATURE_COLS:
+        train[col] = pd.to_numeric(train[col], errors="coerce").fillna(
+            FEATURE_DEFAULTS[col]
+        )
+
+    if "composite_risk_score" not in train.columns:
+        train["composite_risk_score"] = 50.0
+    train["composite_risk_score"] = pd.to_numeric(
+        train["composite_risk_score"], errors="coerce"
+    ).fillna(50.0)
+
+    return train
+
+
+def train_simulation_models(
+    df: pd.DataFrame,
+) -> Tuple[Pipeline, Pipeline]:
+    train = _build_simulation_training_frame(df)
+
+    x_risk = train[FEATURE_COLS]
+    y_risk = train["composite_risk_score"]
+
+    ltv_feature_cols = [c for c in FEATURE_COLS if c != "lead_time_volatility_days"]
+    x_ltv = train[ltv_feature_cols]
+    y_ltv = train["lead_time_volatility_days"]
+
+    risk_model = Pipeline(
+        steps=[
+            ("scaler", StandardScaler()),
+            (
+                "model",
+                GradientBoostingRegressor(
+                    n_estimators=200,
+                    max_depth=4,
+                    learning_rate=0.05,
+                    subsample=0.8,
+                    random_state=42,
+                ),
+            ),
+        ]
+    )
+
+    lead_time_model = Pipeline(
+        steps=[
+            ("scaler", StandardScaler()),
+            (
+                "model",
+                GradientBoostingRegressor(
+                    n_estimators=160,
+                    max_depth=3,
+                    learning_rate=0.05,
+                    subsample=0.85,
+                    random_state=42,
+                ),
+            ),
+        ]
+    )
+
+    risk_model.fit(x_risk, y_risk)
+    lead_time_model.fit(x_ltv, y_ltv)
+    return risk_model, lead_time_model
 
 
 @app.on_event("startup")
 def startup() -> None:
     state["df"] = load_dataset()
+    state["simulation_model_version"] = "simulation_ml_v1"
+    try:
+        risk_model, lead_time_model = train_simulation_models(state["df"])
+        state["simulation_risk_model"] = risk_model
+        state["simulation_lead_time_model"] = lead_time_model
+        state["simulation_training_ok"] = True
+    except Exception:
+        state["simulation_risk_model"] = None
+        state["simulation_lead_time_model"] = None
+        state["simulation_training_ok"] = False
 
 
 @app.get("/health")
@@ -113,7 +315,21 @@ def health() -> Dict[str, str]:
 @app.post("/reload")
 def reload_dataset() -> Dict[str, str]:
     state["df"] = load_dataset()
-    return {"status": "reloaded", "rows": str(len(state["df"]))}
+    try:
+        risk_model, lead_time_model = train_simulation_models(state["df"])
+        state["simulation_risk_model"] = risk_model
+        state["simulation_lead_time_model"] = lead_time_model
+        state["simulation_training_ok"] = True
+    except Exception:
+        state["simulation_risk_model"] = None
+        state["simulation_lead_time_model"] = None
+        state["simulation_training_ok"] = False
+
+    return {
+        "status": "reloaded",
+        "rows": str(len(state["df"])),
+        "simulation_training_ok": str(bool(state.get("simulation_training_ok"))),
+    }
 
 
 @app.get("/analytics/single-point-of-failure")
@@ -673,3 +889,319 @@ def predict_graph(req: GraphPredictRequest) -> Dict[str, Any]:
     predictions = _compute_graph_predictions(nodes, edges, df)
 
     return {"model": "graph_topology_v2", "predictions": predictions}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ML-based scenario simulation (POST /analytics/simulate)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class NodeData(BaseModel):
+    node_id: str
+    edges: List[str] = []
+
+    financial_health_score: Optional[float] = None
+    historical_delay_frequency_pct: Optional[float] = None
+    batch_failure_rate_pct: Optional[float] = None
+    lead_time_volatility_days: Optional[float] = None
+    dependency_pct: Optional[float] = None
+    capacity_utilization_pct: Optional[float] = None
+    gmp_status: Optional[Any] = None
+    fda_approved: Optional[Any] = None
+    active_disruption_signal: Optional[Any] = None
+    compliance_violation_flag: Optional[Any] = None
+
+    class Config:
+        extra = "allow"
+
+
+class SimulationRequest(BaseModel):
+    origin_node_id: str
+    disruption_type: str
+    severity: float
+    nodes: List[NodeData]
+    max_hops: int = 4
+    risk_threshold: float = 20.0
+
+
+class AffectedNode(BaseModel):
+    node_id: str
+    hop: int
+    risk_score: float
+    lead_time_increase: float
+    capacity_impact_pct: float
+    effective_severity: float
+
+
+class SimulationResponse(BaseModel):
+    model: str
+    origin_node_id: str
+    disruption_type: str
+    severity: float
+    origin_risk: float
+    origin_lt_inc: float
+    origin_cap_impact: float
+    affected_nodes: List[AffectedNode]
+    total_affected: int
+
+
+def _node_to_features(node_data: Dict[str, Any]) -> Dict[str, float]:
+    dep_value = node_data.get("dependency_pct")
+    if dep_value is None:
+        dep_value = node_data.get("dependency_percentage")
+
+    capacity_value = node_data.get("capacity_utilization_pct")
+    if capacity_value is None:
+        capacity_value = node_data.get("capacity_utilization")
+
+    fda_value = node_data.get("fda_approved")
+    if fda_value is None:
+        fda_value = node_data.get("fda_approval")
+
+    compliance_raw = node_data.get("compliance_violation_flag")
+    if compliance_raw is None:
+        compliance_status = str(node_data.get("compliance_status") or "").strip().lower()
+        if compliance_status in {"non-compliant", "violation", "false", "0"}:
+            compliance_raw = 1
+        elif compliance_status:
+            compliance_raw = 0
+
+    features = {
+        "financial_health_score": _to_float(
+            node_data.get("financial_health_score"),
+            FEATURE_DEFAULTS["financial_health_score"],
+        ),
+        "historical_delay_frequency_pct": _to_float(
+            node_data.get("historical_delay_frequency_pct"),
+            FEATURE_DEFAULTS["historical_delay_frequency_pct"],
+        ),
+        "batch_failure_rate_pct": _to_float(
+            node_data.get("batch_failure_rate_pct"),
+            FEATURE_DEFAULTS["batch_failure_rate_pct"],
+        ),
+        "lead_time_volatility_days": _to_float(
+            node_data.get("lead_time_volatility_days"),
+            FEATURE_DEFAULTS["lead_time_volatility_days"],
+        ),
+        "dependency_pct": _to_float(
+            dep_value,
+            FEATURE_DEFAULTS["dependency_pct"],
+        ),
+        "capacity_utilization_pct": _to_float(
+            capacity_value,
+            FEATURE_DEFAULTS["capacity_utilization_pct"],
+        ),
+        "gmp_status": _to_binary(
+            node_data.get("gmp_status"),
+            FEATURE_DEFAULTS["gmp_status"],
+        ),
+        "fda_approved": _to_binary(
+            fda_value,
+            FEATURE_DEFAULTS["fda_approved"],
+        ),
+        "active_disruption_signal": _to_binary(
+            node_data.get("active_disruption_signal"),
+            FEATURE_DEFAULTS["active_disruption_signal"],
+        ),
+        "compliance_violation_flag": _to_binary(
+            compliance_raw,
+            FEATURE_DEFAULTS["compliance_violation_flag"],
+        ),
+    }
+
+    return _clip_feature_ranges(features)
+
+
+def _perturb_features(
+    features: Dict[str, float], disruption_type: str, severity: float
+) -> Dict[str, float]:
+    updated = dict(features)
+
+    if disruption_type == "supplier_failure":
+        updated["active_disruption_signal"] = 1.0
+        updated["financial_health_score"] -= severity * 0.5
+        updated["batch_failure_rate_pct"] += severity * 0.4
+    elif disruption_type == "transport_delay":
+        updated["historical_delay_frequency_pct"] += severity * 0.5
+        updated["lead_time_volatility_days"] += severity * 0.4
+    elif disruption_type == "demand_surge":
+        updated["capacity_utilization_pct"] += severity * 0.6
+        updated["active_disruption_signal"] = 1.0
+    elif disruption_type == "natural_disaster":
+        updated["active_disruption_signal"] = 1.0
+        updated["financial_health_score"] -= severity * 0.4
+        updated["lead_time_volatility_days"] += severity * 0.3
+    elif disruption_type == "quality_issue":
+        updated["batch_failure_rate_pct"] += severity * 0.7
+        updated["compliance_violation_flag"] = 1.0
+    elif disruption_type == "regulatory_change":
+        updated["compliance_violation_flag"] = 1.0
+        updated["gmp_status"] = 0.0
+        updated["fda_approved"] = 0.0
+
+    return _clip_feature_ranges(updated)
+
+
+def _as_feature_vector(features: Dict[str, float], cols: List[str]) -> pd.DataFrame:
+    return pd.DataFrame([{col: features[col] for col in cols}], columns=cols)
+
+
+def _ml_predict_disruption(
+    node_data: Dict[str, Any],
+    disruption_type: str,
+    severity: float,
+    risk_model: Pipeline,
+    lead_time_model: Pipeline,
+) -> Tuple[float, float, float]:
+    base_features = _node_to_features(node_data)
+    perturbed_features = _perturb_features(base_features, disruption_type, severity)
+
+    risk_pred = float(risk_model.predict(_as_feature_vector(perturbed_features, FEATURE_COLS))[0])
+    simulated_risk = float(np.clip(round(risk_pred, 2), 0.0, 100.0))
+
+    ltv_cols = [c for c in FEATURE_COLS if c != "lead_time_volatility_days"]
+    lead_time_pred = float(
+        lead_time_model.predict(_as_feature_vector(perturbed_features, ltv_cols))[0]
+    )
+    lead_time_increase = max(
+        0.0,
+        round(lead_time_pred - base_features["lead_time_volatility_days"], 2),
+    )
+
+    capacity_impact = max(
+        0.0,
+        round(
+            perturbed_features["capacity_utilization_pct"]
+            - base_features["capacity_utilization_pct"],
+            3,
+        ),
+    )
+
+    return simulated_risk, lead_time_increase, capacity_impact
+
+
+def _bfs_cascade(
+    origin_node_id: str,
+    nodes_by_id: Dict[str, Dict[str, Any]],
+    disruption_type: str,
+    severity: float,
+    max_hops: int,
+    risk_threshold: float,
+    risk_model: Pipeline,
+    lead_time_model: Pipeline,
+) -> List[Dict[str, Any]]:
+    queue: collections.deque = collections.deque()
+    visited: Set[str] = {origin_node_id}
+    affected_nodes: List[Dict[str, Any]] = []
+
+    origin_edges = nodes_by_id.get(origin_node_id, {}).get("edges", [])
+    for next_node_id in origin_edges:
+        queue.append((next_node_id, 1, severity * HOP_ATTENUATION))
+
+    while queue:
+        node_id, hop, effective_severity = queue.popleft()
+        if node_id in visited or hop > max_hops or effective_severity <= 0:
+            continue
+
+        visited.add(node_id)
+        node = nodes_by_id.get(node_id)
+        if node is None:
+            continue
+
+        risk_score, lead_time_inc, cap_impact = _ml_predict_disruption(
+            node,
+            disruption_type,
+            effective_severity,
+            risk_model,
+            lead_time_model,
+        )
+
+        if risk_score < risk_threshold:
+            continue
+
+        affected_nodes.append(
+            {
+                "node_id": node_id,
+                "hop": hop,
+                "risk_score": round(risk_score, 2),
+                "lead_time_increase": round(lead_time_inc, 2),
+                "capacity_impact_pct": round(cap_impact, 3),
+                "effective_severity": round(effective_severity, 3),
+            }
+        )
+
+        if hop < max_hops:
+            next_severity = effective_severity * HOP_ATTENUATION
+            for neighbor_id in node.get("edges", []):
+                if neighbor_id not in visited:
+                    queue.append((neighbor_id, hop + 1, next_severity))
+
+    affected_nodes.sort(key=lambda item: (-item["risk_score"], item["hop"]))
+    return affected_nodes
+
+
+@app.post("/analytics/simulate", response_model=SimulationResponse)
+def simulate(req: SimulationRequest) -> SimulationResponse:
+    if req.disruption_type not in VALID_DISRUPTIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported disruption_type '{req.disruption_type}'",
+        )
+
+    if req.severity < 0 or req.severity > 10:
+        raise HTTPException(status_code=400, detail="severity must be between 0 and 10")
+
+    risk_model = state.get("simulation_risk_model")
+    lead_time_model = state.get("simulation_lead_time_model")
+    if risk_model is None or lead_time_model is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Simulation ML models unavailable. Call /reload or restart service.",
+        )
+
+    if not req.nodes:
+        raise HTTPException(status_code=400, detail="Payload contains no nodes")
+
+    nodes_by_id: Dict[str, Dict[str, Any]] = {}
+    for node in req.nodes:
+        raw = node.model_dump() if hasattr(node, "model_dump") else node.dict()
+        edges = raw.get("edges") or []
+        raw["edges"] = [str(edge_id) for edge_id in edges if edge_id]
+        nodes_by_id[str(raw["node_id"])] = raw
+
+    origin_node = nodes_by_id.get(req.origin_node_id)
+    if origin_node is None:
+        raise HTTPException(status_code=400, detail="origin_node_id not found in payload")
+
+    normalized_severity = req.severity / 10.0
+
+    origin_risk, origin_lt_inc, origin_cap_impact = _ml_predict_disruption(
+        origin_node,
+        req.disruption_type,
+        normalized_severity,
+        risk_model,
+        lead_time_model,
+    )
+
+    affected_nodes = _bfs_cascade(
+        origin_node_id=req.origin_node_id,
+        nodes_by_id=nodes_by_id,
+        disruption_type=req.disruption_type,
+        severity=normalized_severity,
+        max_hops=max(1, int(req.max_hops)),
+        risk_threshold=max(0.0, float(req.risk_threshold)),
+        risk_model=risk_model,
+        lead_time_model=lead_time_model,
+    )
+
+    return SimulationResponse(
+        model=str(state.get("simulation_model_version") or "simulation_ml_v1"),
+        origin_node_id=req.origin_node_id,
+        disruption_type=req.disruption_type,
+        severity=req.severity,
+        origin_risk=round(origin_risk, 2),
+        origin_lt_inc=round(origin_lt_inc, 2),
+        origin_cap_impact=round(origin_cap_impact, 3),
+        affected_nodes=affected_nodes,
+        total_affected=len(affected_nodes),
+    )

@@ -165,6 +165,10 @@ export const analyticsApi = {
     const { data } = await analyticsApiClient.post("/analytics/predict-graph", payload);
     return data;
   },
+  simulate: async (payload) => {
+    const { data } = await analyticsApiClient.post("/analytics/simulate", payload);
+    return data;
+  },
   getOverview: async () => {
     const { data } = await analyticsApiClient.get("/analytics/overview");
     return data;

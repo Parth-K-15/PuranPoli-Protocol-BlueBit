@@ -200,6 +200,7 @@ Open `http://localhost:5173`.
 - `GET /analytics/supplier-reliability`
 - `GET /analytics/demand-supply-mismatch`
 - `POST /analytics/predict-graph`
+- `POST /analytics/simulate`
 
 ## Risk Logic Summary
 

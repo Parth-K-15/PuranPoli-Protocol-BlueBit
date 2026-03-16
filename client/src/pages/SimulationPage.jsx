@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { graphApi } from "../services/api";
-import { NODE_META } from "../constants/nodeMeta";
+import { analyticsApi, graphApi } from "../services/api";
 
 const DISRUPTION_TYPES = [
   { id: "supplier_failure", label: "Supplier Failure", icon: "error", desc: "A key supplier goes offline" },
@@ -11,8 +10,37 @@ const DISRUPTION_TYPES = [
   { id: "regulatory_change", label: "Regulatory Change", icon: "gavel", desc: "New compliance requirements" },
 ];
 
+function normalizeSimulationError(error) {
+  const detail = error?.response?.data?.detail;
+
+  if (Array.isArray(detail)) {
+    return detail
+      .map((entry) => {
+        if (typeof entry === "string") return entry;
+        if (entry && typeof entry === "object") {
+          const loc = Array.isArray(entry.loc) ? entry.loc.join(".") : "field";
+          const msg = entry.msg || "Invalid input";
+          return `${loc}: ${msg}`;
+        }
+        return String(entry);
+      })
+      .join("; ");
+  }
+
+  if (detail && typeof detail === "object") {
+    return detail.msg || JSON.stringify(detail);
+  }
+
+  if (typeof detail === "string" && detail.trim()) {
+    return detail;
+  }
+
+  return error?.message || "Failed to run simulation";
+}
+
 function SimulationPage() {
   const [nodes, setNodes] = useState([]);
+  const [edges, setEdges] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedDisruption, setSelectedDisruption] = useState(null);
   const [targetNodeId, setTargetNodeId] = useState("");
@@ -20,12 +48,14 @@ function SimulationPage() {
   const [duration, setDuration] = useState(7);
   const [simResult, setSimResult] = useState(null);
   const [simRunning, setSimRunning] = useState(false);
+  const [simError, setSimError] = useState("");
 
   useEffect(() => {
     async function load() {
       try {
         const data = await graphApi.getGraph();
         setNodes(data.nodes || []);
+        setEdges(data.edges || []);
       } catch (error) {
         console.error("Failed to load graph", error);
       } finally {
@@ -35,59 +65,134 @@ function SimulationPage() {
     load();
   }, []);
 
-  const runSimulation = () => {
+  const runSimulation = async () => {
     if (!selectedDisruption || !targetNodeId) return;
 
     setSimRunning(true);
     setSimResult(null);
+    setSimError("");
 
-    // Client-side simulation model
-    setTimeout(() => {
-      const targetNode = nodes.find((n) => n.id === targetNodeId);
-      const baseRisk = targetNode?.data?.risk_score || 0;
-      const impactMultiplier = severity / 100;
+    try {
+      const nodeById = new Map();
+      const adjacency = new Map();
 
-      // Calculate cascading impacts
-      const affectedNodes = nodes
-        .filter((n) => n.id !== targetNodeId)
-        .map((n) => {
-          const distance = Math.random(); // Simplified proximity
-          const cascadeRisk = Math.min(
-            100,
-            Math.round((n.data?.risk_score || 0) + (severity * (1 - distance) * 0.4))
-          );
+      nodes.forEach((node) => {
+        const nodeId = String(node.id || node.node_id || node._id || "");
+        if (!nodeId) return;
+        nodeById.set(nodeId, node);
+        adjacency.set(nodeId, []);
+      });
+
+      edges.forEach((edge) => {
+        const sourceId = String(edge.source || edge.sourceId || "");
+        const targetId = String(edge.target || edge.targetId || "");
+        if (!sourceId || !targetId || !adjacency.has(sourceId)) return;
+        adjacency.get(sourceId).push(targetId);
+      });
+
+      const payloadNodes = Array.from(nodeById.entries()).map(([nodeId, node]) => {
+        const nodeData = node.data || {};
+        const nodeEdges = (nodeData.edges || adjacency.get(nodeId) || []).map((id) => String(id));
+
+        return {
+          node_id: nodeId,
+          edges: nodeEdges,
+          financial_health_score: nodeData.financial_health_score,
+          historical_delay_frequency_pct: nodeData.historical_delay_frequency_pct,
+          batch_failure_rate_pct: nodeData.batch_failure_rate_pct,
+          lead_time_volatility_days: nodeData.lead_time_volatility_days,
+          dependency_pct: nodeData.dependency_pct,
+          dependency_percentage: nodeData.dependency_percentage,
+          capacity_utilization_pct: nodeData.capacity_utilization_pct,
+          capacity_utilization: nodeData.capacity_utilization,
+          gmp_status: nodeData.gmp_status,
+          fda_approved: nodeData.fda_approved,
+          active_disruption_signal: nodeData.active_disruption_signal,
+          compliance_violation_flag: nodeData.compliance_violation_flag,
+          compliance_status: nodeData.compliance_status,
+        };
+      });
+
+      const payload = {
+        origin_node_id: targetNodeId,
+        disruption_type: selectedDisruption,
+        severity: Number((severity / 10).toFixed(2)),
+        max_hops: 4,
+        risk_threshold: 20,
+        nodes: payloadNodes,
+      };
+
+      const response = await analyticsApi.simulate(payload);
+      const targetNode = nodeById.get(targetNodeId);
+
+      const originalRiskMap = new Map(
+        nodes.map((node) => [
+          String(node.id || node.node_id || node._id || ""),
+          Number(node.data?.risk_score || 0),
+        ])
+      );
+
+      const affectedNodes = (response.affected_nodes || [])
+        .map((item) => {
+          const srcNode = nodeById.get(item.node_id);
+          const originalRisk = originalRiskMap.get(item.node_id) || 0;
+          const simulatedRisk = Number(item.risk_score || 0);
+
           return {
-            id: n.id,
-            name: n.data?.name,
-            type: n.data?.type,
-            originalRisk: n.data?.risk_score || 0,
-            simulatedRisk: cascadeRisk,
-            delta: cascadeRisk - (n.data?.risk_score || 0),
+            id: item.node_id,
+            name: srcNode?.data?.name || item.node_id,
+            type: srcNode?.data?.type || "Unknown",
+            originalRisk,
+            simulatedRisk,
+            delta: Number((simulatedRisk - originalRisk).toFixed(2)),
+            hop: item.hop,
           };
         })
         .sort((a, b) => b.delta - a.delta);
 
-      const avgOriginal = Math.round(nodes.reduce((s, n) => s + (n.data?.risk_score || 0), 0) / nodes.length);
-      const avgSimulated = Math.round(
-        (affectedNodes.reduce((s, n) => s + n.simulatedRisk, 0) + Math.min(100, baseRisk + severity * 0.6)) /
-          nodes.length
+      const originOriginalRisk = Number(targetNode?.data?.risk_score || 0);
+      const baselineTotal = nodes.reduce(
+        (sum, node) => sum + Number(node.data?.risk_score || 0),
+        0
       );
+      const avgOriginal = nodes.length ? Math.round(baselineTotal / nodes.length) : 0;
+
+      const simulatedRiskById = new Map(
+        nodes.map((node) => [
+          String(node.id || node.node_id || node._id || ""),
+          Number(node.data?.risk_score || 0),
+        ])
+      );
+      simulatedRiskById.set(targetNodeId, Number(response.origin_risk || 0));
+      affectedNodes.forEach((node) => simulatedRiskById.set(node.id, node.simulatedRisk));
+
+      const simulatedTotal = Array.from(simulatedRiskById.values()).reduce(
+        (sum, riskValue) => sum + riskValue,
+        0
+      );
+      const avgSimulated = nodes.length ? Math.round(simulatedTotal / nodes.length) : 0;
 
       setSimResult({
         disruption: DISRUPTION_TYPES.find((d) => d.id === selectedDisruption),
         targetNode: targetNode?.data,
         severity,
         duration,
-        impactedNodeCount: affectedNodes.filter((n) => n.delta > 5).length,
+        impactedNodeCount: Number(response.total_affected || 0) + 1,
         avgOriginal,
         avgSimulated,
         affectedNodes: affectedNodes.slice(0, 10),
-        overallImpact: Math.round(impactMultiplier * 100),
-        recoveryEstimate: Math.round(duration * (1 + impactMultiplier)),
+        overallImpact: Math.max(0, avgSimulated - avgOriginal),
+        recoveryEstimate: Math.round(duration * (1 + severity / 100)),
+        originRiskDelta: Number((Number(response.origin_risk || 0) - originOriginalRisk).toFixed(2)),
+        model: response.model,
       });
-
+    } catch (error) {
+      console.error("Simulation request failed", error);
+      setSimError(normalizeSimulationError(error));
+      setSimResult(null);
+    } finally {
       setSimRunning(false);
-    }, 1500);
+    }
   };
 
   if (loading) {
@@ -200,6 +305,12 @@ function SimulationPage() {
 
         {/* Results */}
         <div className="lg:col-span-2">
+          {simError && (
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {simError}
+            </div>
+          )}
+
           {!simResult && !simRunning && (
             <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-dashed border-[#b1b2ff]/20 bg-white/50 p-12">
               <span className="material-symbols-outlined mb-4 text-5xl text-[#b1b2ff]/30">science</span>

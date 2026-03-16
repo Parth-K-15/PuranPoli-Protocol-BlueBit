@@ -31,3 +31,11 @@ set DATASET_PATH=C:\path\to\your\dataset.csv
 - `GET /analytics/geographic-concentration?top_n=10`
 - `GET /analytics/supplier-reliability?limit=20`
 - `GET /analytics/demand-supply-mismatch?limit=20`
+- `POST /analytics/predict-graph`
+- `POST /analytics/simulate`
+
+`POST /analytics/simulate` uses the `simulation_ml_v1` engine:
+- Trains `GradientBoostingRegressor` models at startup from the pharma CSV.
+- Applies deterministic disruption feature perturbations per disruption type.
+- Runs BFS cascade propagation with hop attenuation.
+- Predicts risk/lead-time impacts per hop via trained models (not fixed multipliers).
