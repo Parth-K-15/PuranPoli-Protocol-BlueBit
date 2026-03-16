@@ -1,0 +1,142 @@
+[
+  {
+    "city": "Mumbai",
+    "lat": 19.076,
+    "lng": 72.8777,
+    "tier": "metro",
+    "population_weight": 1.0
+  },
+  {
+    "city": "Pune",
+    "lat": 18.5204,
+    "lng": 73.8567,
+    "tier": "metro",
+    "population_weight": 0.75
+  },
+  {
+    "city": "Nagpur",
+    "lat": 21.1458,
+    "lng": 79.0882,
+    "tier": "tier1",
+    "population_weight": 0.55
+  },
+  {
+    "city": "Thane",
+    "lat": 19.2183,
+    "lng": 72.9781,
+    "tier": "tier1",
+    "population_weight": 0.50
+  },
+  {
+    "city": "Nashik",
+    "lat": 19.9975,
+    "lng": 73.7898,
+    "tier": "tier1",
+    "population_weight": 0.42
+  },
+  {
+    "city": "Aurangabad",
+    "lat": 19.8762,
+    "lng": 75.3433,
+    "tier": "tier1",
+    "population_weight": 0.38
+  },
+  {
+    "city": "Solapur",
+    "lat": 17.6599,
+    "lng": 75.9064,
+    "tier": "tier2",
+    "population_weight": 0.30
+  },
+  {
+    "city": "Kolhapur",
+    "lat": 16.7050,
+    "lng": 74.2433,
+    "tier": "tier2",
+    "population_weight": 0.28
+  },
+  {
+    "city": "Amravati",
+    "lat": 20.9320,
+    "lng": 77.7523,
+    "tier": "tier2",
+    "population_weight": 0.25
+  },
+  {
+    "city": "Nanded",
+    "lat": 19.1383,
+    "lng": 77.3210,
+    "tier": "tier2",
+    "population_weight": 0.22
+  },
+  {
+    "city": "Sangli",
+    "lat": 16.8524,
+    "lng": 74.5815,
+    "tier": "tier2",
+    "population_weight": 0.20
+  },
+  {
+    "city": "Jalgaon",
+    "lat": 21.0077,
+    "lng": 75.5626,
+    "tier": "tier2",
+    "population_weight": 0.22
+  },
+  {
+    "city": "Akola",
+    "lat": 20.7002,
+    "lng": 77.0082,
+    "tier": "tier2",
+    "population_weight": 0.18
+  },
+  {
+    "city": "Latur",
+    "lat": 18.3968,
+    "lng": 76.5604,
+    "tier": "tier2",
+    "population_weight": 0.17
+  },
+  {
+    "city": "Dhule",
+    "lat": 20.9042,
+    "lng": 74.7749,
+    "tier": "tier2",
+    "population_weight": 0.16
+  },
+  {
+    "city": "Ahmednagar",
+    "lat": 19.0948,
+    "lng": 74.7480,
+    "tier": "tier2",
+    "population_weight": 0.20
+  },
+  {
+    "city": "Chandrapur",
+    "lat": 19.9615,
+    "lng": 79.2961,
+    "tier": "tier2",
+    "population_weight": 0.15
+  },
+  {
+    "city": "Parbhani",
+    "lat": 19.2610,
+    "lng": 76.7748,
+    "tier": "tier2",
+    "population_weight": 0.14
+  },
+  {
+    "city": "Ichalkaranji",
+    "lat": 16.6903,
+    "lng": 74.4601,
+    "tier": "tier2",
+    "population_weight": 0.13
+  },
+  {
+    "city": "Bid",
+    "lat": 18.9890,
+    "lng": 75.7601,
+    "tier": "tier2",
+    "population_weight": 0.12
+  }
+]

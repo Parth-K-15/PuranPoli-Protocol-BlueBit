@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import collections
+import json
 import os
+import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+import joblib
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException
@@ -13,6 +17,10 @@ from pydantic import BaseModel
 
 APP_DIR = Path(__file__).resolve().parent
 ML_DIR = APP_DIR.parent
+
+# ── Demand Forecasting imports ──────────────────────────────────────────────
+DEMAND_FORECAST_DIR = ML_DIR / "demand_forecasting"
+sys.path.insert(0, str(DEMAND_FORECAST_DIR))
 
 DATASET_CANDIDATES = [
     ML_DIR / "pharma_supply_chain_risk.csv",
@@ -97,12 +105,63 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-state: Dict[str, pd.DataFrame] = {}
+state: Dict[str, Any] = {}
+
+
+# ── City name → district dt_code mapping ────────────────────────────────────
+CITY_TO_DISTRICT_CODE: Dict[str, str] = {
+    "Mumbai": "519",
+    "Pune": "521",
+    "Nagpur": "505",
+    "Thane": "517",
+    "Nashik": "516",
+    "Aurangabad": "515",
+    "Solapur": "526",
+    "Kolhapur": "530",
+    "Amravati": "503",
+    "Nanded": "511",
+    "Sangli": "531",
+    "Jalgaon": "499",
+    "Akola": "501",
+    "Latur": "524",
+    "Dhule": "498",
+    "Ahmednagar": "522",
+    "Chandrapur": "509",
+    "Parbhani": "513",
+    "Ichalkaranji": "530",  # same district as Kolhapur
+    "Bid": "523",           # "Beed" in TopoJSON
+}
 
 
 @app.on_event("startup")
 def startup() -> None:
     state["df"] = load_dataset()
+
+    # ── Load demand forecasting assets (once) ──
+    model_path = DEMAND_FORECAST_DIR / "models" / "xgb_demand_model.pkl"
+    cities_path = DEMAND_FORECAST_DIR / "cities.json"
+    hist_path = DEMAND_FORECAST_DIR / "data" / "synthetic_demand.csv"
+
+    if model_path.exists() and cities_path.exists() and hist_path.exists():
+        state["demand_model"] = joblib.load(model_path)
+        with open(cities_path, "r") as f:
+            state["demand_cities"] = json.load(f)
+        state["demand_historical"] = pd.read_csv(hist_path)
+        state["demand_ready"] = True
+
+        # Import forecasting functions (after sys.path is set)
+        from predict import PRODUCTS, _demand_level, _build_future_features
+        from features import get_feature_columns
+        state["_demand_fns"] = {
+            "PRODUCTS": PRODUCTS,
+            "demand_level": _demand_level,
+            "build_future_features": _build_future_features,
+            "get_feature_columns": get_feature_columns,
+        }
+        print(f"[startup] Demand forecasting model loaded from {model_path}")
+    else:
+        state["demand_ready"] = False
+        print("[startup] Demand forecasting assets not found — endpoint disabled")
 
 
 @app.get("/health")
@@ -310,6 +369,118 @@ def analytics_overview() -> Dict[str, object]:
         "geographic_concentration": geographic_concentration(top_n=5),
         "supplier_reliability": supplier_reliability(limit=5),
         "demand_supply_mismatch": demand_supply_mismatch(limit=5),
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Demand Forecasting  (GET /analytics/demand-forecast)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@app.get("/analytics/demand-forecast/products")
+def demand_forecast_products() -> Dict[str, Any]:
+    """Return the list of available products and their categories."""
+    if not state.get("demand_ready"):
+        raise HTTPException(status_code=503, detail="Demand forecasting model not loaded.")
+    PRODUCTS = state["_demand_fns"]["PRODUCTS"]
+    return {
+        "products": [
+            {"name": name, "category": meta["category"]}
+            for name, meta in PRODUCTS.items()
+        ]
+    }
+
+
+@app.get("/analytics/demand-forecast")
+def demand_forecast(
+    product: str = "Paracetamol",
+    weeks_ahead: int = 1,
+) -> Dict[str, Any]:
+    """
+    Run on-the-fly demand forecast for a given product and forecast horizon.
+    Returns per-city predictions with district code mapping for heatmap rendering.
+    """
+    if not state.get("demand_ready"):
+        raise HTTPException(status_code=503, detail="Demand forecasting model not loaded.")
+
+    PRODUCTS = state["_demand_fns"]["PRODUCTS"]
+    _demand_level = state["_demand_fns"]["demand_level"]
+    _build_future_features = state["_demand_fns"]["build_future_features"]
+    get_feature_columns = state["_demand_fns"]["get_feature_columns"]
+
+    if product not in PRODUCTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown product '{product}'. Available: {list(PRODUCTS.keys())}",
+        )
+
+    if weeks_ahead < 1 or weeks_ahead > 12:
+        raise HTTPException(status_code=400, detail="weeks_ahead must be between 1 and 12.")
+
+    model = state["demand_model"]
+    cities = state["demand_cities"]
+    historical = state["demand_historical"]
+
+    last_date = pd.to_datetime(historical["date"].max())
+    forecast_dates = pd.date_range(
+        start=last_date + pd.Timedelta(weeks=1),
+        periods=weeks_ahead,
+        freq="W-MON",
+    )
+
+    feature_cols = get_feature_columns()
+    results: list = []
+
+    for fdate in forecast_dates:
+        feat_df = _build_future_features(historical, cities, product, [fdate])
+        if feat_df.empty:
+            continue
+
+        X = feat_df[feature_cols].values
+        predictions = model.predict(X)
+        feat_df["predicted_units"] = predictions.clip(min=0).astype(int)
+
+        min_pred = feat_df["predicted_units"].min()
+        max_pred = feat_df["predicted_units"].max()
+        if max_pred > min_pred:
+            feat_df["demand_index"] = (
+                (feat_df["predicted_units"] - min_pred) / (max_pred - min_pred)
+            ).round(4)
+        else:
+            feat_df["demand_index"] = 0.5
+
+        city_lookup = {c["city"]: c for c in cities}
+        city_results: list = []
+
+        for _, row in feat_df.iterrows():
+            cname = row["city"]
+            cmeta = city_lookup[cname]
+            di = round(float(row["demand_index"]), 4)
+            city_results.append({
+                "city": cname,
+                "lat": cmeta["lat"],
+                "lng": cmeta["lng"],
+                "predicted_units": int(row["predicted_units"]),
+                "demand_index": di,
+                "demand_level": _demand_level(di),
+                "district_code": CITY_TO_DISTRICT_CODE.get(cname),
+            })
+
+        city_results.sort(key=lambda c: c["demand_index"], reverse=True)
+
+        results.append({
+            "product": product,
+            "forecast_week": fdate.strftime("%G-W%V"),
+            "forecast_date": fdate.strftime("%Y-%m-%d"),
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "cities": city_results,
+        })
+
+    return {
+        "product": product,
+        "weeks_ahead": weeks_ahead,
+        "available_products": list(PRODUCTS.keys()),
+        "forecasts": results,
     }
 
 
