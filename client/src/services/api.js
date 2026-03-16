@@ -2,7 +2,8 @@ import axios from "axios";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api/v1";
 const ANALYTICS_API_BASE_URL =
-  import.meta.env.VITE_ANALYTICS_API_URL || "http://localhost:8002";
+  import.meta.env.VITE_ANALYTICS_API_URL || "http://localhost:8001";
+const ANALYTICS_API_FALLBACK_URL = "http://localhost:8001";
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -10,6 +11,10 @@ const api = axios.create({
 
 const analyticsApiClient = axios.create({
   baseURL: ANALYTICS_API_BASE_URL,
+});
+
+const analyticsFallbackClient = axios.create({
+  baseURL: ANALYTICS_API_FALLBACK_URL,
 });
 
 // ── Workspace API ───────────────────────────────────────────────────────────
@@ -166,8 +171,21 @@ export const analyticsApi = {
     return data;
   },
   simulate: async (payload) => {
-    const { data } = await analyticsApiClient.post("/analytics/simulate", payload);
-    return data;
+    try {
+      const { data } = await analyticsApiClient.post("/analytics/simulate", payload);
+      return data;
+    } catch (error) {
+      const isNetworkError = !error?.response;
+      const usingNonFallbackBase =
+        String(analyticsApiClient.defaults.baseURL || "") !== ANALYTICS_API_FALLBACK_URL;
+
+      if (isNetworkError && usingNonFallbackBase) {
+        const { data } = await analyticsFallbackClient.post("/analytics/simulate", payload);
+        return data;
+      }
+
+      throw error;
+    }
   },
   getOverview: async () => {
     const { data } = await analyticsApiClient.get("/analytics/overview");
