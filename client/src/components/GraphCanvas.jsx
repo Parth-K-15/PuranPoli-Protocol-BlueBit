@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   addEdge,
   Background,
@@ -114,11 +114,19 @@ const withRelationshipLabel = (edge, nodeTypeById) => {
   };
 };
 
-function GraphCanvas({ onNodeSelect, refreshToken, setRefreshToken, workspaceId }) {
+function GraphCanvas({
+  onNodeSelect,
+  refreshToken,
+  setRefreshToken,
+  workspaceId,
+  generatedDraft,
+  readOnly = false,
+}) {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedEdgeId, setSelectedEdgeId] = useState(null);
   const [catalogModal, setCatalogModal] = useState(null); // { nodeType, position }
+  const hasLoggedSpofFallbackRef = useRef(false);
   const { screenToFlowPosition, zoomIn, zoomOut, fitView } = useReactFlow();
 
   const enrichNodesWithSpof = useCallback(async (baseNodes, baseEdges) => {
@@ -159,12 +167,19 @@ function GraphCanvas({ onNodeSelect, refreshToken, setRefreshToken, workspaceId 
         },
       }));
     } catch (error) {
-      console.warn("SPOF enrichment unavailable, using existing node flags", error);
+      if (!hasLoggedSpofFallbackRef.current) {
+        hasLoggedSpofFallbackRef.current = true;
+        console.warn("SPOF enrichment unavailable, using existing node flags", error);
+      }
       return fallbackNodes;
     }
   }, []);
 
   const loadGraph = useCallback(async () => {
+    if (generatedDraft) {
+      return;
+    }
+
     if (!workspaceId) {
       setNodes([]);
       setEdges([]);
@@ -184,14 +199,61 @@ function GraphCanvas({ onNodeSelect, refreshToken, setRefreshToken, workspaceId 
     setNodes(enrichedNodes);
     setEdges(loadedEdges);
     setSelectedEdgeId(null);
-  }, [enrichNodesWithSpof, setEdges, setNodes, workspaceId]);
+  }, [enrichNodesWithSpof, generatedDraft, setEdges, setNodes, workspaceId]);
 
   useEffect(() => {
     loadGraph();
   }, [loadGraph, refreshToken]);
 
+  useEffect(() => {
+    if (!generatedDraft) {
+      return;
+    }
+
+    const draftNodes = (generatedDraft.nodes || []).map((node) => ({
+      id: node.id,
+      position: node.position || { x: 0, y: 0 },
+      data: {
+        ...defaultNodeData(node.type || "Distributor", node.id),
+        ...node,
+        isGeneratedDraft: true,
+      },
+      type: "supplyNode",
+    }));
+
+    const nodeTypeById = Object.fromEntries(
+      draftNodes.map((node) => [node.id, node.data?.type])
+    );
+    const draftEdges = (generatedDraft.edges || []).map((edge) =>
+      withRelationshipLabel(
+        {
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          data: {
+            material: edge.material || "",
+            lead_time: edge.lead_time || 0,
+            dependency_percent: edge.dependency_percent || 0,
+            transport_mode: edge.transport_mode || "",
+            risk_score: edge.risk_score || 0,
+          },
+          markerEnd: { type: "arrowclosed" },
+        },
+        nodeTypeById
+      )
+    );
+
+    setNodes(draftNodes);
+    setEdges(draftEdges);
+    setSelectedEdgeId(null);
+  }, [generatedDraft, setEdges, setNodes]);
+
   const onConnect = useCallback(
     async (params) => {
+      if (readOnly) {
+        return;
+      }
+
       if (!workspaceId) {
         return;
       }
@@ -241,11 +303,15 @@ function GraphCanvas({ onNodeSelect, refreshToken, setRefreshToken, workspaceId 
         console.error("Failed to create edge", error);
       }
     },
-    [nodes, setEdges, workspaceId]
+    [nodes, readOnly, setEdges, workspaceId]
   );
 
   const onDrop = useCallback(
     (event) => {
+      if (readOnly) {
+        return;
+      }
+
       event.preventDefault();
       const nodeType = event.dataTransfer.getData("application/reactflow");
 
@@ -256,11 +322,12 @@ function GraphCanvas({ onNodeSelect, refreshToken, setRefreshToken, workspaceId 
       const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
       setCatalogModal({ nodeType, position });
     },
-    [screenToFlowPosition, workspaceId]
+    [readOnly, screenToFlowPosition, workspaceId]
   );
 
   const handleCatalogSelect = useCallback(
     async (nodeData) => {
+      if (readOnly) return;
       if (!workspaceId) return;
       const id = createNodeId();
       const position = catalogModal?.position || { x: 0, y: 0 };
@@ -281,7 +348,7 @@ function GraphCanvas({ onNodeSelect, refreshToken, setRefreshToken, workspaceId 
         setCatalogModal(null);
       }
     },
-    [workspaceId, catalogModal, setNodes]
+    [workspaceId, catalogModal, readOnly, setNodes]
   );
 
   const onDragOver = useCallback((event) => {
@@ -306,6 +373,10 @@ function GraphCanvas({ onNodeSelect, refreshToken, setRefreshToken, workspaceId 
   }, []);
 
   const handleDeleteSelectedEdge = useCallback(async () => {
+    if (readOnly) {
+      return;
+    }
+
     if (!selectedEdgeId) {
       return;
     }
@@ -318,30 +389,43 @@ function GraphCanvas({ onNodeSelect, refreshToken, setRefreshToken, workspaceId 
       console.error("Failed to delete selected edge", error);
       setRefreshToken((prev) => prev + 1);
     }
-  }, [selectedEdgeId, setEdges, setRefreshToken]);
+  }, [readOnly, selectedEdgeId, setEdges, setRefreshToken]);
 
   const onNodeDragStop = useCallback(
     async (_event, node) => {
+      if (readOnly) {
+        return;
+      }
+
       if (!workspaceId) {
         return;
       }
+
+      if (node?.data?.isGeneratedDraft) {
+        return;
+      }
+
       try {
         await graphApi.updateNode(node.id, { position: node.position });
       } catch (error) {
         console.error("Failed to save node position", error);
       }
     },
-    [workspaceId]
+    [readOnly, workspaceId]
   );
 
   const onEdgesDelete = useCallback(async (deletedEdges) => {
+    if (readOnly) {
+      return;
+    }
+
     try {
       await Promise.all(deletedEdges.map((edge) => graphApi.deleteEdge(edge.id)));
     } catch (error) {
       console.error("Failed to delete edges", error);
       setRefreshToken((prev) => prev + 1);
     }
-  }, [setRefreshToken]);
+  }, [readOnly, setRefreshToken]);
 
   return (
     <div className="h-full w-full">

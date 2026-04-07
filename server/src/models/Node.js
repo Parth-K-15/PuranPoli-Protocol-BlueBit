@@ -159,6 +159,11 @@ const nodeSchema = new mongoose.Schema(
       ref: "Workspace",
       default: null,
     },
+    linkedSupplier: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Supplier",
+      default: null,
+    },
     // ── Import tracking ─────────────────────────────────────
     imported: {
       type: Boolean,

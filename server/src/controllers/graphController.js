@@ -11,6 +11,12 @@ const { CatalogItem } = require("../models/CatalogItem");
 const Supplier = require("../models/Supplier");
 const User = require("../models/User");
 const { computeAllNodeRisks, getDisruptionsForNode, getNodeIntelligence } = require("../services/riskEngine");
+const {
+  generateGraphDraft,
+  storeDraft,
+  getDraft,
+  deleteDraft,
+} = require("../services/graphGenerationService");
 
 const SUPPLIER_TIER_TYPE_MAP = {
   1: "Tier1Supplier",
@@ -55,6 +61,7 @@ const toReactFlowNode = (nodeDoc) => ({
     sourceWorkspace: nodeDoc.sourceWorkspace || null,
     originalNodeId: nodeDoc.originalNodeId || null,
     linkedWorkspace: nodeDoc.linkedWorkspace || null,
+    linkedSupplier: nodeDoc.linkedSupplier || null,
   },
   type: "supplyNode",
 });
@@ -805,6 +812,150 @@ const nodeIntelligence = async (req, res) => {
   res.status(StatusCodes.OK).json({ success: true, ...intel });
 };
 
+const autoGenerateGraph = async (req, res) => {
+  const { workspaceId = null, prompt, constraints = {} } = req.body || {};
+
+  if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
+    return res.status(StatusCodes.BAD_REQUEST).json({
+      success: false,
+      message: "prompt is required",
+    });
+  }
+
+  const normalizedWorkspaceId =
+    workspaceId && mongoose.Types.ObjectId.isValid(workspaceId) ? workspaceId : null;
+
+  const draft = await generateGraphDraft({
+    prompt: prompt.trim(),
+    constraints,
+  });
+
+  if (!draft.nodes.length) {
+    return res.status(StatusCodes.BAD_REQUEST).json({
+      success: false,
+      message: "Could not generate a valid graph draft from this prompt",
+      warnings: draft.warnings || [],
+    });
+  }
+
+  const generationId = storeDraft({
+    workspaceId: normalizedWorkspaceId,
+    prompt: prompt.trim(),
+    draft,
+  });
+
+  return res.status(StatusCodes.OK).json({
+    success: true,
+    generationId,
+    draft: {
+      nodes: draft.nodes,
+      edges: draft.edges,
+    },
+    assumptions: draft.assumptions,
+    warnings: draft.warnings,
+    validation: {
+      isValid: draft.nodes.length > 0,
+      nodeCount: draft.nodes.length,
+      edgeCount: draft.edges.length,
+    },
+    provider: draft.provider,
+    model: draft.model,
+    fallbackUsed: draft.fallbackUsed,
+  });
+};
+
+const approveGeneratedGraph = async (req, res) => {
+  const { generationId, workspaceId = null } = req.body || {};
+
+  if (!generationId || typeof generationId !== "string") {
+    return res.status(StatusCodes.BAD_REQUEST).json({
+      success: false,
+      message: "generationId is required",
+    });
+  }
+
+  const record = getDraft(generationId);
+  if (!record) {
+    return res.status(StatusCodes.NOT_FOUND).json({
+      success: false,
+      message: "Draft generation not found or expired",
+    });
+  }
+
+  const targetWorkspaceId =
+    workspaceId && mongoose.Types.ObjectId.isValid(workspaceId)
+      ? workspaceId
+      : record.workspaceId && mongoose.Types.ObjectId.isValid(record.workspaceId)
+      ? record.workspaceId
+      : null;
+
+  let workspaceDoc;
+  if (targetWorkspaceId) {
+    workspaceDoc = await Workspace.findById(targetWorkspaceId);
+  }
+
+  if (!workspaceDoc) {
+    workspaceDoc = await Workspace.create({
+      name: `Auto Generated - ${new Date().toISOString().slice(0, 10)}`,
+      description: "Created from LLM prompt draft generation",
+    });
+  }
+
+  const draftNodes = record.draft.nodes || [];
+  const draftEdges = record.draft.edges || [];
+
+  const prefix = `ag_${generationId.slice(-8)}`;
+  const nodeIdMap = new Map();
+  const nodeDocs = draftNodes.map((node, index) => {
+    const rawId = String(node.id || `n_${index + 1}`).trim();
+    const mappedId = `${prefix}_${rawId}`;
+    nodeIdMap.set(rawId, mappedId);
+
+    return {
+      ...node,
+      id: mappedId,
+      workspace: workspaceDoc._id,
+    };
+  });
+
+  const edgeDocs = draftEdges
+    .map((edge, index) => {
+      const source = nodeIdMap.get(String(edge.source || "").trim());
+      const target = nodeIdMap.get(String(edge.target || "").trim());
+      if (!source || !target) return null;
+
+      const rawEdgeId = String(edge.id || `e_${index + 1}`).trim();
+      return {
+        edge_id: `${prefix}_${rawEdgeId}`,
+        workspace: workspaceDoc._id,
+        source_node: source,
+        target_node: target,
+        material: edge.material,
+        lead_time: edge.lead_time,
+        dependency_percent: edge.dependency_percent,
+        transport_mode: edge.transport_mode,
+        risk_score: edge.risk_score,
+      };
+    })
+    .filter(Boolean);
+
+  await Node.insertMany(nodeDocs, { ordered: false });
+  await Edge.insertMany(edgeDocs, { ordered: false });
+  await syncWorkspaceCounts(workspaceDoc._id);
+
+  deleteDraft(generationId);
+
+  return res.status(StatusCodes.OK).json({
+    success: true,
+    workspaceId: workspaceDoc._id,
+    created: {
+      nodes: nodeDocs.length,
+      edges: edgeDocs.length,
+    },
+    message: "Draft graph approved and saved",
+  });
+};
+
 module.exports = {
   getGraph,
   createNode,
@@ -819,4 +970,6 @@ module.exports = {
   nodeDisruptions,
   nodeIntelligence,
   getPharmaSchemaAnalysis,
+  autoGenerateGraph,
+  approveGeneratedGraph,
 };

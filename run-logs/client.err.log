@@ -1,0 +1,16 @@
+c:\Users\Digvijay\Desktop\Puranpoli_protocol\Bluebit\PuranPoli-Protocol-BlueBit\client\node_modules\esbuild\lib\main.js:974
+                  reject(new Error(error2));
+                         ^
+
+Error: [31mError during dependency optimization:
+
+[39mThe service was stopped
+    at c:\Users\Digvijay\Desktop\Puranpoli_protocol\Bluebit\PuranPoli-Protocol-BlueBit\client\node_modules\esbuild\lib\main.js:974:26
+    at responseCallbacks.<computed> (c:\Users\Digvijay\Desktop\Puranpoli_protocol\Bluebit\PuranPoli-Protocol-BlueBit\client\node_modules\esbuild\lib\main.js:603:9)
+    at Socket.afterClose (c:\Users\Digvijay\Desktop\Puranpoli_protocol\Bluebit\PuranPoli-Protocol-BlueBit\client\node_modules\esbuild\lib\main.js:594:28)
+    at Socket.emit (node:events:530:35)
+    at endReadableNT (node:internal/streams/readable:1698:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)
+
+Node.js v22.17.0
+^C

@@ -132,6 +132,14 @@ export const graphApi = {
     const { data } = await api.post("/graph/compute-risks", null, { params });
     return data;
   },
+  autoGenerate: async (payload) => {
+    const { data } = await api.post("/graph/auto-generate", payload);
+    return data;
+  },
+  approveGeneration: async (payload) => {
+    const { data } = await api.post("/graph/approve-generation", payload);
+    return data;
+  },
   getNodeDisruptions: async (nodeId) => {
     const { data } = await api.get(`/nodes/${nodeId}/disruptions`);
     return data;
@@ -207,8 +215,21 @@ export const supplierApi = {
 
 export const analyticsApi = {
   predictGraph: async (payload) => {
-    const { data } = await analyticsApiClient.post("/analytics/predict-graph", payload);
-    return data;
+    try {
+      const { data } = await analyticsApiClient.post("/analytics/predict-graph", payload);
+      return data;
+    } catch (error) {
+      const isNetworkError = !error?.response;
+      const usingNonFallbackBase =
+        String(analyticsApiClient.defaults.baseURL || "") !== ANALYTICS_API_FALLBACK_URL;
+
+      if (isNetworkError && usingNonFallbackBase) {
+        const { data } = await analyticsFallbackClient.post("/analytics/predict-graph", payload);
+        return data;
+      }
+
+      throw error;
+    }
   },
   simulate: async (payload) => {
     try {

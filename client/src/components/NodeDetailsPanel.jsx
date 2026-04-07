@@ -1,6 +1,12 @@
 import { useState, useEffect } from "react";
 import { MAHARASHTRA_DISTRICTS } from "../constants/maharashtraDistricts";
-import { graphApi, workspaceApi } from "../services/api";
+import { graphApi, supplierApi, workspaceApi } from "../services/api";
+
+const NODE_TYPE_TIER_MAP = {
+  Tier1Supplier: 1,
+  Tier2Supplier: 2,
+  Tier3Supplier: 3,
+};
 
 const severityLabel = (score) => {
   if (score >= 80) return { text: "Critical", cls: "bg-red-100 text-red-700" };
@@ -56,10 +62,14 @@ function NodeDetailsPanel({
   const [loadingIntel, setLoadingIntel] = useState(false);
   const [networkBusy, setNetworkBusy] = useState(false);
   const [networkExpanded, setNetworkExpanded] = useState(false);
+  const [supplierOptions, setSupplierOptions] = useState([]);
+  const [loadingSuppliers, setLoadingSuppliers] = useState(false);
   const linkedWorkspaceId =
     formState.linkedWorkspace || node?.data?.linkedWorkspace || null;
   const anchorNodeId = node?.id || null;
   const canToggleNetwork = Boolean(workspaceId && linkedWorkspaceId && anchorNodeId);
+  const supplierTier = NODE_TYPE_TIER_MAP[node?.data?.type] || null;
+  const canSelectSupplier = Boolean(!node?.data?.isGeneratedDraft && supplierTier);
 
   useEffect(() => {
     if (!node?.data?.id) return;
@@ -117,6 +127,35 @@ function NodeDetailsPanel({
     };
   }, [canToggleNetwork, workspaceId, linkedWorkspaceId, anchorNodeId]);
 
+  useEffect(() => {
+    if (!node?.id || !canSelectSupplier) {
+      setSupplierOptions([]);
+      return;
+    }
+
+    let active = true;
+    setLoadingSuppliers(true);
+
+    supplierApi
+      .list({ tier: supplierTier, limit: 200 })
+      .then((res) => {
+        if (!active) return;
+        setSupplierOptions(res?.suppliers || []);
+      })
+      .catch(() => {
+        if (!active) return;
+        setSupplierOptions([]);
+      })
+      .finally(() => {
+        if (!active) return;
+        setLoadingSuppliers(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [node?.id, canSelectSupplier, supplierTier]);
+
   if (!node) {
     return null;
   }
@@ -136,6 +175,47 @@ function NodeDetailsPanel({
   const handleSubmit = (event) => {
     event.preventDefault();
     onSave(node.id, formState);
+  };
+
+  const handleSupplierSelect = (supplierId) => {
+    if (!supplierId) {
+      setFormState((prev) => ({
+        ...prev,
+        linkedSupplier: null,
+      }));
+      return;
+    }
+
+    const selectedSupplier = supplierOptions.find(
+      (supplier) => String(supplier?._id) === String(supplierId)
+    );
+
+    if (!selectedSupplier) {
+      return;
+    }
+
+    setFormState((prev) => ({
+      ...prev,
+      linkedSupplier: selectedSupplier._id,
+      name: selectedSupplier.name || prev.name,
+      country: selectedSupplier.country || prev.country,
+      region: selectedSupplier.region || prev.region,
+      capacity: Number(selectedSupplier.production_capacity) || prev.capacity,
+      lead_time_days: Number(selectedSupplier.avg_lead_time_days) || prev.lead_time_days,
+      risk_score: Number(selectedSupplier.composite_risk_score) || prev.risk_score,
+      dependency_percentage:
+        Number(selectedSupplier.dependency_pct) || prev.dependency_percentage,
+      financial_health_score:
+        Number(selectedSupplier.financial_health_score) || prev.financial_health_score,
+      contract_duration_months:
+        Number(selectedSupplier.contract_duration_months) || prev.contract_duration_months,
+      cold_chain_capable: Boolean(selectedSupplier.cold_chain_capable),
+      gmp_status: selectedSupplier.gmp_status ? "Certified" : "Unknown",
+      fda_approval: selectedSupplier.fda_approved ? "Approved" : "Unknown",
+      compliance_status: selectedSupplier.compliance_violation_flag
+        ? "Non-Compliant"
+        : "Compliant",
+    }));
   };
 
   const handleToggleSupplierNetwork = async () => {
@@ -515,6 +595,31 @@ function NodeDetailsPanel({
       </div>
 
       <form className="space-y-5" onSubmit={handleSubmit}>
+        {canSelectSupplier && (
+          <label className="block space-y-2">
+            <span className="text-[10px] font-bold uppercase text-slate-400">
+              Select Tier Supplier From Database
+            </span>
+            <select
+              className="w-full rounded-xl border border-[#b1b2ff]/10 bg-[#b1b2ff]/5 px-4 py-3 text-sm font-medium focus:border-[#b1b2ff] focus:ring-1 focus:ring-[#b1b2ff]"
+              value={formState.linkedSupplier || ""}
+              onChange={(event) => handleSupplierSelect(event.target.value)}
+              disabled={loadingSuppliers}
+            >
+              <option value="">
+                {loadingSuppliers
+                  ? "Loading suppliers..."
+                  : `Choose Tier ${supplierTier} supplier`}
+              </option>
+              {supplierOptions.map((supplier) => (
+                <option key={supplier._id} value={supplier._id}>
+                  {supplier.name} ({supplier.country || "Unknown"})
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
         {fields.map((field) => (
           <label key={field.key} className="block space-y-2">
             <span className="text-[10px] font-bold uppercase text-slate-400">{field.label}</span>

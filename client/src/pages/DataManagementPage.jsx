@@ -1,6 +1,7 @@
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { graphApi, catalogApi, supplierApi } from "../services/api";
 import { NODE_META, NODE_TYPES } from "../constants/nodeMeta";
+import { DataManagementSkeleton } from "../components/skeletons/PageSkeletons";
 
 const CATALOG_FIELDS = [
   { key: "name", label: "Name", type: "text", required: true },
@@ -121,7 +122,7 @@ function DataManagementPage() {
   const [importingCsv, setImportingCsv] = useState(false);
 
   // ── Load graph data ───────────────────────────────────────────────────────
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const data = await graphApi.getGraph();
@@ -132,10 +133,10 @@ function DataManagementPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   // ── Load catalog data ─────────────────────────────────────────────────────
-  const loadCatalog = async () => {
+  const loadCatalog = useCallback(async () => {
     try {
       const res = await catalogApi.list(typeFilter || undefined, searchQuery || undefined);
       const flat = [];
@@ -147,10 +148,10 @@ function DataManagementPage() {
     } catch (error) {
       console.error("Failed to load catalog", error);
     }
-  };
+  }, [searchQuery, typeFilter]);
 
   // ── Load suppliers ────────────────────────────────────────────────────────
-  const loadSuppliers = async (page = supplierPage) => {
+  const loadSuppliers = useCallback(async (page = supplierPage) => {
     try {
       const params = { page, limit: 50 };
       if (supplierSearch) params.search = supplierSearch;
@@ -162,22 +163,22 @@ function DataManagementPage() {
     } catch (error) {
       console.error("Failed to load suppliers", error);
     }
-  };
+  }, [supplierPage, supplierRiskFilter, supplierSearch, supplierTierFilter]);
 
   useEffect(() => {
     loadData();
     loadCatalog();
     loadSuppliers(1);
-  }, []);
+  }, [loadCatalog, loadData, loadSuppliers]);
 
   useEffect(() => {
     if (activeTab === "catalog") loadCatalog();
     if (activeTab === "suppliers") loadSuppliers(1);
-  }, [typeFilter, searchQuery, activeTab]);
+  }, [activeTab, loadCatalog, loadSuppliers]);
 
   useEffect(() => {
     if (activeTab === "suppliers") loadSuppliers(1);
-  }, [supplierSearch, supplierTierFilter, supplierRiskFilter]);
+  }, [activeTab, loadSuppliers]);
 
   // ── Node / Edge handlers ──────────────────────────────────────────────────
   const handleDeleteNode = async (id) => {
@@ -325,7 +326,7 @@ function DataManagementPage() {
       const res = await supplierApi.importCsv();
       setImportStatus({ type: "success", message: res.message });
       await loadSuppliers(1);
-    } catch (error) {
+    } catch {
       setImportStatus({ type: "error", message: "Failed to import CSV data" });
     } finally {
       setImportingCsv(false);
@@ -418,11 +419,7 @@ function DataManagementPage() {
   });
 
   if (loading) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <span className="material-symbols-outlined animate-spin text-4xl text-[#b1b2ff]">progress_activity</span>
-      </div>
-    );
+    return <DataManagementSkeleton />;
   }
 
   return (

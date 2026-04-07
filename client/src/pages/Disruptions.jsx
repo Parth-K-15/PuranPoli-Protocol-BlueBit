@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { getDisruptions } from "../services/disruptionApi";
 import SeverityBadge from "../components/SeverityBadge";
-import Spinner from "../components/Spinner";
+import { DisruptionsSkeleton } from "../components/skeletons/PageSkeletons";
 
 const SOURCE_OPTIONS = ["all", "news", "weather", "google_news"];
 const EVENT_OPTIONS = [
@@ -126,7 +126,7 @@ export default function Disruptions() {
 
       {/* List */}
       {loading ? (
-        <Spinner />
+        <DisruptionsSkeleton />
       ) : events.length === 0 ? (
         <div className="text-center py-20 text-gray-500">
           <Shield className="h-10 w-10 mx-auto mb-3 text-gray-700" />

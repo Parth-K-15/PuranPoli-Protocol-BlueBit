@@ -4,6 +4,7 @@ import AppLayout from "./components/layout/AppLayout";
 import LandingPage from "./pages/LandingPage";
 import DashboardPage from "./pages/DashboardPage";
 import GraphBuilderPage from "./pages/GraphBuilderPage";
+import GraphGenerationPage from "./pages/GraphGenerationPage";
 import RiskAnalysisPage from "./pages/RiskAnalysisPage";
 import SimulationPage from "./pages/SimulationPage";
 import ReportsPage from "./pages/ReportsPage";
@@ -26,6 +27,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <DashboardPage /> },
       { path: "graph", element: <GraphBuilderPage /> },
+      { path: "graph-generate", element: <GraphGenerationPage /> },
       { path: "marketplace", element: <MarketplacePage /> },
       { path: "risk", element: <RiskAnalysisPage /> },
       { path: "simulation", element: <SimulationPage /> },

@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { getStats, getHighRisk, triggerIngest } from "../services/disruptionApi";
 import SeverityBadge from "../components/SeverityBadge";
-import Spinner from "../components/Spinner";
+import { DashboardSkeleton } from "../components/skeletons/PageSkeletons";
 
 const PIE_COLORS = ["#06b6d4", "#f97316", "#a855f7"];
 const SEVERITY_COLORS = { 0: "#22c55e", 30: "#eab308", 60: "#f97316", 80: "#ef4444" };
@@ -57,7 +57,7 @@ export default function Dashboard() {
     }
   };
 
-  if (loading) return <Spinner />;
+  if (loading) return <DashboardSkeleton />;
 
   const sourceData = (stats?.bySource || []).map((s) => ({
     name: s._id || "unknown",

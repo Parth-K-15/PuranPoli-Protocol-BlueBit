@@ -14,6 +14,8 @@ const {
   nodeDisruptions,
   nodeIntelligence,
   getPharmaSchemaAnalysis,
+  autoGenerateGraph,
+  approveGeneratedGraph,
 } = require("../controllers/graphController");
 
 const router = express.Router();
@@ -24,6 +26,8 @@ router.get("/nodes/catalog/schema", getPharmaSchemaAnalysis);
 router.post("/graph/demo", loadDemo);
 router.post("/graph/reset", resetGraph);
 router.post("/graph/compute-risks", computeRisks);
+router.post("/graph/auto-generate", autoGenerateGraph);
+router.post("/graph/approve-generation", approveGeneratedGraph);
 
 router.post("/nodes", createNode);
 router.patch("/nodes/:id", updateNode);
