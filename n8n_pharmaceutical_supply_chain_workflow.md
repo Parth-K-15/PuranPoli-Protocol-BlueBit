@@ -24,6 +24,101 @@ This workflow generates pharmaceutical supply chain graphs from webhook input, v
 }
 ```
 
+## New Section: Prompt -> JSON -> Supply Chain Network Graph
+
+This section defines the exact user journey you described:
+- User submits a natural-language prompt about the product/supply chain requirement.
+- n8n enriches the prompt with required business and logistics inputs.
+- AI generates a complete supply chain JSON (nodes, edges, metadata).
+- The JSON response is returned through `Respond to Webhook`.
+- Frontend converts this JSON into an attractive interactive network graph.
+
+### API Entry Pattern
+- Endpoint: `/webhook/ai-generate-supply-chain-v3` (production) or `/webhook-test/ai-generate-supply-chain-v3` (testing)
+- Method: `POST`
+- Trigger source: frontend form, backend service, or Postman
+
+### Minimal Prompt-First Request
+```json
+{
+  "prompt": "Create a resilient insulin cold-chain supply network for USA with backup distributors and max 45 days lead time.",
+  "constraints": {
+    "target_market": "USA",
+    "budget_usd": 2000000,
+    "max_lead_time_days": 45,
+    "cold_chain_required": true
+  }
+}
+```
+
+### Required n8n Processing Sequence
+1. Webhook receives `prompt` and optional constraints.
+2. Normalize Input node maps prompt + defaults into model-ready context.
+3. Supply Chain Planner generates structured JSON only.
+4. Parse JSON Output node removes markdown fences and validates shape.
+5. Respond to Webhook returns JSON payload with HTTP `200`.
+
+### Recommended Response Shape (Graph-Ready JSON)
+```json
+{
+  "success": true,
+  "workspace_name": "Insulin USA Cold Chain",
+  "nodes": [
+    {
+      "id": "sup_1",
+      "name": "API Manufacturer - Singapore",
+      "type": "supplier",
+      "tier": "tier1",
+      "location": "Singapore",
+      "risk_score": 32
+    },
+    {
+      "id": "dist_1",
+      "name": "Primary Distributor - Texas",
+      "type": "distributor",
+      "tier": "tier1",
+      "location": "USA",
+      "risk_score": 28
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "sup_1",
+      "target": "dist_1",
+      "transport_mode": "air",
+      "lead_time_days": 9,
+      "cost_usd": 18000
+    }
+  ],
+  "assumptions": [
+    "FDA-compliant distributors are prioritized.",
+    "Cold-chain logistics is enabled end-to-end."
+  ],
+  "warnings": []
+}
+```
+
+### JSON-to-Graph Conversion (Frontend Handoff)
+- Use `nodes` and `edges` directly in React Flow data adapters.
+- Map node `type` to visual style:
+  - `supplier`: blue card
+  - `manufacturer`: green card
+  - `distributor`: orange card
+  - `retailer`: purple card
+- Show `risk_score` as badge color (green/yellow/red thresholds).
+- Show edge labels with `transport_mode`, `lead_time_days`, and `cost_usd`.
+- Enable layout pass (Dagre/ELK/force) before first render for cleaner, attractive topology.
+
+### Reliability Rules
+- Always return valid JSON from Parse JSON Output before Respond to Webhook.
+- If generation fails, return:
+  - `success: false`
+  - `error_code`
+  - `message`
+  - `debug_id` (optional trace)
+- Keep node IDs stable and unique for predictable frontend rendering.
+
 ## Stage 1: Input and AI Generation
 
 ### Node 1: Webhook Trigger

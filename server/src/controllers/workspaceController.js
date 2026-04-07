@@ -2,8 +2,31 @@ const { StatusCodes } = require("http-status-codes");
 const Workspace = require("../models/Workspace");
 const { Node } = require("../models/Node");
 const Edge = require("../models/Edge");
+const {
+  OFFLINE_WORKSPACE_ID,
+  isMongoReady,
+  mongoUnavailableMessage,
+} = require("../utils/runtimeState");
+
+const offlineWorkspace = {
+  _id: OFFLINE_WORKSPACE_ID,
+  name: "Offline Workspace",
+  description: "MongoDB unavailable. Read-only fallback workspace.",
+  nodeCount: 0,
+  edgeCount: 0,
+  readOnly: true,
+};
 
 const listWorkspaces = async (req, res) => {
+  if (!isMongoReady()) {
+    return res.status(StatusCodes.OK).json({
+      success: true,
+      degraded: true,
+      message: mongoUnavailableMessage,
+      workspaces: [offlineWorkspace],
+    });
+  }
+
   const workspaces = await Workspace.find({}).sort({ updatedAt: -1 }).lean();
 
   // Attach node/edge counts
@@ -21,6 +44,22 @@ const listWorkspaces = async (req, res) => {
 };
 
 const getWorkspace = async (req, res) => {
+  if (!isMongoReady()) {
+    if (req.params.id === OFFLINE_WORKSPACE_ID) {
+      return res.status(StatusCodes.OK).json({
+        success: true,
+        degraded: true,
+        message: mongoUnavailableMessage,
+        workspace: offlineWorkspace,
+      });
+    }
+
+    return res.status(StatusCodes.SERVICE_UNAVAILABLE).json({
+      success: false,
+      message: mongoUnavailableMessage,
+    });
+  }
+
   const ws = await Workspace.findById(req.params.id).lean();
 
   if (!ws) {
@@ -40,6 +79,13 @@ const getWorkspace = async (req, res) => {
 };
 
 const createWorkspace = async (req, res) => {
+  if (!isMongoReady()) {
+    return res.status(StatusCodes.SERVICE_UNAVAILABLE).json({
+      success: false,
+      message: `${mongoUnavailableMessage} Cannot create workspace in offline mode.`,
+    });
+  }
+
   const { name, description } = req.body;
 
   if (!name || !name.trim()) {
@@ -57,6 +103,13 @@ const createWorkspace = async (req, res) => {
 };
 
 const updateWorkspace = async (req, res) => {
+  if (!isMongoReady()) {
+    return res.status(StatusCodes.SERVICE_UNAVAILABLE).json({
+      success: false,
+      message: `${mongoUnavailableMessage} Cannot update workspace in offline mode.`,
+    });
+  }
+
   const { name, description } = req.body;
 
   const ws = await Workspace.findByIdAndUpdate(
@@ -75,6 +128,13 @@ const updateWorkspace = async (req, res) => {
 };
 
 const deleteWorkspace = async (req, res) => {
+  if (!isMongoReady()) {
+    return res.status(StatusCodes.SERVICE_UNAVAILABLE).json({
+      success: false,
+      message: `${mongoUnavailableMessage} Cannot delete workspace in offline mode.`,
+    });
+  }
+
   const ws = await Workspace.findByIdAndDelete(req.params.id);
 
   if (!ws) {

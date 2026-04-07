@@ -9,6 +9,11 @@ const { nodeCatalog } = require("../data/nodeCatalog");
 const { getPharmaCatalogAndSchema } = require("../data/pharmaCatalog");
 const { CatalogItem } = require("../models/CatalogItem");
 const { computeAllNodeRisks, getDisruptionsForNode, getNodeIntelligence } = require("../services/riskEngine");
+const {
+  OFFLINE_WORKSPACE_ID,
+  isMongoReady,
+  mongoUnavailableMessage,
+} = require("../utils/runtimeState");
 
 const toReactFlowNode = (nodeDoc) => ({
   id: nodeDoc.id,
@@ -63,6 +68,12 @@ const resolveWorkspace = (req) => {
   return wsId;
 };
 
+const mongoWriteUnavailable = (res, action) =>
+  res.status(StatusCodes.SERVICE_UNAVAILABLE).json({
+    success: false,
+    message: `${mongoUnavailableMessage} Cannot ${action} while running in offline mode.`,
+  });
+
 const syncWorkspaceCounts = async (workspaceId) => {
   if (!workspaceId || !mongoose.Types.ObjectId.isValid(workspaceId)) {
     return;
@@ -77,6 +88,16 @@ const syncWorkspaceCounts = async (workspaceId) => {
 };
 
 const getGraph = async (req, res) => {
+  if (!isMongoReady()) {
+    return res.status(StatusCodes.OK).json({
+      success: true,
+      degraded: true,
+      message: mongoUnavailableMessage,
+      nodes: [],
+      edges: [],
+    });
+  }
+
   const wsId = resolveWorkspace(req);
   const filter = wsId ? { workspace: wsId } : {};
 
@@ -93,6 +114,10 @@ const getGraph = async (req, res) => {
 };
 
 const createNode = async (req, res) => {
+  if (!isMongoReady()) {
+    return mongoWriteUnavailable(res, "create nodes");
+  }
+
   const {
     id,
     name,
@@ -173,6 +198,10 @@ const createNode = async (req, res) => {
 };
 
 const updateNode = async (req, res) => {
+  if (!isMongoReady()) {
+    return mongoWriteUnavailable(res, "update nodes");
+  }
+
   const { id } = req.params;
   const payload = { ...req.body };
   // Prevent changing workspace via update
@@ -204,6 +233,10 @@ const updateNode = async (req, res) => {
 };
 
 const deleteNode = async (req, res) => {
+  if (!isMongoReady()) {
+    return mongoWriteUnavailable(res, "delete nodes");
+  }
+
   const { id } = req.params;
 
   const node = await Node.findOneAndDelete({ id });
@@ -229,6 +262,10 @@ const deleteNode = async (req, res) => {
 };
 
 const createEdge = async (req, res) => {
+  if (!isMongoReady()) {
+    return mongoWriteUnavailable(res, "create edges");
+  }
+
   const {
     edge_id,
     source_node,
@@ -288,6 +325,10 @@ const createEdge = async (req, res) => {
 };
 
 const deleteEdge = async (req, res) => {
+  if (!isMongoReady()) {
+    return mongoWriteUnavailable(res, "delete edges");
+  }
+
   const { id } = req.params;
 
   const edge = await Edge.findOneAndDelete({ edge_id: id });
@@ -308,6 +349,19 @@ const deleteEdge = async (req, res) => {
 };
 
 const loadDemo = async (req, res) => {
+  if (!isMongoReady()) {
+    const fallbackWorkspace = resolveWorkspace(req) || OFFLINE_WORKSPACE_ID;
+    return res.status(StatusCodes.OK).json({
+      success: true,
+      degraded: true,
+      persisted: false,
+      message: `${mongoUnavailableMessage} Returning non-persisted demo graph.`,
+      workspace: fallbackWorkspace,
+      nodes: demoNodes.map(toReactFlowNode),
+      edges: demoEdges.map(toReactFlowEdge),
+    });
+  }
+
   const wsId = resolveWorkspace(req);
 
   // If workspace provided, clear only that workspace; else create a "Demo" workspace
@@ -345,6 +399,16 @@ const loadDemo = async (req, res) => {
 };
 
 const resetGraph = async (req, res) => {
+  if (!isMongoReady()) {
+    return res.status(StatusCodes.OK).json({
+      success: true,
+      degraded: true,
+      message: `${mongoUnavailableMessage} Graph reset is a no-op in offline mode.`,
+      nodes: [],
+      edges: [],
+    });
+  }
+
   const wsId = resolveWorkspace(req);
   const filter = wsId ? { workspace: wsId } : {};
 
@@ -386,6 +450,26 @@ const getNodeCatalog = async (req, res) => {
     });
   }
 
+  if (!isMongoReady()) {
+    if (type && nodeCatalog[type]) {
+      return res.status(StatusCodes.OK).json({
+        success: true,
+        degraded: true,
+        source: "static_fallback",
+        message: mongoUnavailableMessage,
+        catalog: { [type]: nodeCatalog[type] },
+      });
+    }
+
+    return res.status(StatusCodes.OK).json({
+      success: true,
+      degraded: true,
+      source: "static_fallback",
+      message: mongoUnavailableMessage,
+      catalog: nodeCatalog,
+    });
+  }
+
   // Priority 2: DB catalog (if CSV didn't provide data for requested type)
   const filter = {};
   if (type) filter.type = type;
@@ -418,6 +502,16 @@ const getPharmaSchemaAnalysis = async (_req, res) => {
 
 // ── Risk computation ──────────────────────────────────────────────────────────
 const computeRisks = async (req, res) => {
+  if (!isMongoReady()) {
+    return res.status(StatusCodes.OK).json({
+      success: true,
+      degraded: true,
+      message: `${mongoUnavailableMessage} Risk computation skipped.`,
+      count: 0,
+      nodes: [],
+    });
+  }
+
   const wsId = resolveWorkspace(req);
   const filter = wsId ? { workspace: wsId } : {};
   const results = await computeAllNodeRisks(filter);
@@ -431,6 +525,13 @@ const computeRisks = async (req, res) => {
 };
 
 const nodeDisruptions = async (req, res) => {
+  if (!isMongoReady()) {
+    return res.status(StatusCodes.SERVICE_UNAVAILABLE).json({
+      success: false,
+      message: `${mongoUnavailableMessage} Node disruptions are unavailable.`,
+    });
+  }
+
   const { id } = req.params;
   const { node, disruptions } = await getDisruptionsForNode(id);
 
@@ -449,6 +550,13 @@ const nodeDisruptions = async (req, res) => {
 };
 
 const nodeIntelligence = async (req, res) => {
+  if (!isMongoReady()) {
+    return res.status(StatusCodes.SERVICE_UNAVAILABLE).json({
+      success: false,
+      message: `${mongoUnavailableMessage} Node intelligence is unavailable.`,
+    });
+  }
+
   const { id } = req.params;
   const intel = await getNodeIntelligence(id);
 

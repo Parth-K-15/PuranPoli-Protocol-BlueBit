@@ -1,5 +1,8 @@
 const mongoose = require("mongoose");
 
+// Prevent 10s mongoose query buffering when DB is unavailable.
+mongoose.set("bufferCommands", false);
+
 const connectDB = async () => {
   const mongoUrl = process.env.MONGODB_URL || process.env.MONGODB_URI;
 
@@ -9,7 +12,9 @@ const connectDB = async () => {
   }
 
   try {
-    const conn = await mongoose.connect(mongoUrl);
+    const conn = await mongoose.connect(mongoUrl, {
+      serverSelectionTimeoutMS: 6000,
+    });
     console.log(`MongoDB connected: ${conn.connection.host}`);
     return conn;
   } catch (error) {

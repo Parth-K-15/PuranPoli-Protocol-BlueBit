@@ -5,11 +5,22 @@ const { runAllNow } = require("../scheduler/ingestionScheduler");
 const { fetchNewsArticles } = require("../services/newsService");
 const { fetchAllWeather } = require("../services/weatherService");
 const { fetchGoogleNewsArticles } = require("../services/gdeltService");
+const { isMongoReady, mongoUnavailableMessage } = require("../../utils/runtimeState");
 
 const router = express.Router();
 
 // ── GET /api/v1/disruptions — list with optional filters ──────────────────────
 router.get("/", async (req, res) => {
+  if (!isMongoReady()) {
+    return res.json({
+      success: true,
+      degraded: true,
+      message: mongoUnavailableMessage,
+      count: 0,
+      data: [],
+    });
+  }
+
   const { country, source_type, event_type, limit = 50 } = req.query;
   const filter = {};
 
@@ -26,6 +37,16 @@ router.get("/", async (req, res) => {
 
 // ── GET /api/v1/disruptions/high-risk — severity >= 60 ───────────────────────
 router.get("/high-risk", async (req, res) => {
+  if (!isMongoReady()) {
+    return res.json({
+      success: true,
+      degraded: true,
+      message: mongoUnavailableMessage,
+      count: 0,
+      data: [],
+    });
+  }
+
   const events = await DisruptionEvent.find({ severity_score: { $gte: 60 } })
     .sort({ severity_score: -1 })
     .limit(50);
@@ -35,6 +56,15 @@ router.get("/high-risk", async (req, res) => {
 
 // ── GET /api/v1/disruptions/stats — summary counts ──────────────────────────
 router.get("/stats", async (req, res) => {
+  if (!isMongoReady()) {
+    return res.json({
+      success: true,
+      degraded: true,
+      message: mongoUnavailableMessage,
+      data: { bySource: [], bySeverity: [], byType: [] },
+    });
+  }
+
   const [bySource, bySeverity, byType] = await Promise.all([
     DisruptionEvent.aggregate([
       { $group: { _id: "$source_type", count: { $sum: 1 }, avgSeverity: { $avg: "$severity_score" } } },
@@ -60,6 +90,13 @@ router.get("/stats", async (req, res) => {
 
 // ── POST /api/v1/disruptions/ingest — manual trigger ─────────────────────────
 router.post("/ingest", async (req, res) => {
+  if (!isMongoReady()) {
+    return res.status(StatusCodes.SERVICE_UNAVAILABLE).json({
+      success: false,
+      message: `${mongoUnavailableMessage} Ingestion needs a live database.`,
+    });
+  }
+
   await runAllNow();
   res.status(StatusCodes.OK).json({
     success: true,
