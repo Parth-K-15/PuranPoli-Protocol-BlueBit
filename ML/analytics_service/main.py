@@ -24,6 +24,9 @@ ML_DIR = APP_DIR.parent
 # ── Demand Forecasting imports ──────────────────────────────────────────────
 DEMAND_FORECAST_DIR = ML_DIR / "demand_forecasting"
 sys.path.insert(0, str(DEMAND_FORECAST_DIR))
+DEMAND_MODEL_PATH = DEMAND_FORECAST_DIR / "models" / "xgb_demand_model.pkl"
+DEMAND_CITIES_PATH = DEMAND_FORECAST_DIR / "cities.json"
+DEMAND_HISTORY_PATH = DEMAND_FORECAST_DIR / "data" / "synthetic_demand.csv"
 
 DATASET_CANDIDATES = [
     ML_DIR / "pharma_supply_chain_risk.csv",
@@ -109,6 +112,31 @@ app.add_middleware(
 )
 
 state: Dict[str, Any] = {}
+
+# Used by the heatmap client to aggregate city forecasts into district polygons.
+CITY_TO_DISTRICT_CODE: Dict[str, str] = {
+    "Mumbai": "519",
+    "Pune": "521",
+    "Nagpur": "505",
+    "Thane": "517",
+    "Nashik": "516",
+    "Aurangabad": "515",
+    "Solapur": "526",
+    "Kolhapur": "530",
+    "Amravati": "503",
+    "Nanded": "511",
+    "Sangli": "531",
+    "Jalgaon": "499",
+    "Akola": "501",
+    "Latur": "524",
+    "Dhule": "498",
+    "Ahmednagar": "522",
+    "Chandrapur": "509",
+    "Parbhani": "513",
+    "Ichalkaranji": "530",
+    "Bid": "523",
+    "Beed": "523",
+}
 
 FEATURE_COLS = [
     "financial_health_score",
@@ -300,6 +328,52 @@ def train_simulation_models(
     return risk_model, lead_time_model
 
 
+def _set_demand_state_not_ready(error: Optional[str] = None) -> None:
+    state["demand_ready"] = False
+    state["demand_error"] = error
+    state["_demand_fns"] = {}
+    state["demand_model"] = None
+    state["demand_cities"] = []
+    state["demand_historical"] = pd.DataFrame()
+
+
+def load_demand_forecasting_assets() -> None:
+    try:
+        for required_path in [DEMAND_MODEL_PATH, DEMAND_CITIES_PATH, DEMAND_HISTORY_PATH]:
+            if not required_path.exists():
+                raise FileNotFoundError(f"Missing demand forecasting asset: {required_path}")
+
+        from features import get_feature_columns
+        from predict import PRODUCTS, _build_future_features, _demand_level
+
+        model = joblib.load(DEMAND_MODEL_PATH)
+        with DEMAND_CITIES_PATH.open("r", encoding="utf-8") as handle:
+            cities = json.load(handle)
+        historical = pd.read_csv(DEMAND_HISTORY_PATH)
+
+        state["_demand_fns"] = {
+            "PRODUCTS": PRODUCTS,
+            "demand_level": _demand_level,
+            "build_future_features": _build_future_features,
+            "get_feature_columns": get_feature_columns,
+        }
+        state["demand_model"] = model
+        state["demand_cities"] = cities
+        state["demand_historical"] = historical
+        state["demand_ready"] = True
+        state["demand_error"] = None
+    except Exception as exc:
+        _set_demand_state_not_ready(str(exc))
+
+
+def _demand_not_ready_exception() -> HTTPException:
+    error = state.get("demand_error")
+    detail = "Demand forecasting model not loaded."
+    if error:
+        detail = f"{detail} {error}"
+    return HTTPException(status_code=503, detail=detail)
+
+
 @app.on_event("startup")
 def startup() -> None:
     state["df"] = load_dataset()
@@ -313,11 +387,16 @@ def startup() -> None:
         state["simulation_risk_model"] = None
         state["simulation_lead_time_model"] = None
         state["simulation_training_ok"] = False
+    load_demand_forecasting_assets()
 
 
 @app.get("/health")
 def health() -> Dict[str, str]:
-    return {"status": "ok", "dataset": str(DATASET_PATH)}
+    return {
+        "status": "ok",
+        "dataset": str(DATASET_PATH),
+        "demand_ready": str(bool(state.get("demand_ready"))),
+    }
 
 
 @app.post("/reload")
@@ -332,11 +411,14 @@ def reload_dataset() -> Dict[str, str]:
         state["simulation_risk_model"] = None
         state["simulation_lead_time_model"] = None
         state["simulation_training_ok"] = False
+    load_demand_forecasting_assets()
 
     return {
         "status": "reloaded",
         "rows": str(len(state["df"])),
         "simulation_training_ok": str(bool(state.get("simulation_training_ok"))),
+        "demand_ready": str(bool(state.get("demand_ready"))),
+        "demand_error": state.get("demand_error") or "",
     }
 
 
@@ -546,7 +628,7 @@ def analytics_overview() -> Dict[str, object]:
 def demand_forecast_products() -> Dict[str, Any]:
     """Return the list of available products and their categories."""
     if not state.get("demand_ready"):
-        raise HTTPException(status_code=503, detail="Demand forecasting model not loaded.")
+        raise _demand_not_ready_exception()
     PRODUCTS = state["_demand_fns"]["PRODUCTS"]
     return {
         "products": [
@@ -566,7 +648,7 @@ def demand_forecast(
     Returns per-city predictions with district code mapping for heatmap rendering.
     """
     if not state.get("demand_ready"):
-        raise HTTPException(status_code=503, detail="Demand forecasting model not loaded.")
+        raise _demand_not_ready_exception()
 
     PRODUCTS = state["_demand_fns"]["PRODUCTS"]
     _demand_level = state["_demand_fns"]["demand_level"]
